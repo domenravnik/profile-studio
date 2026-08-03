@@ -154,16 +154,24 @@ button:disabled {
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
   min-height: 38px;
   padding: 0 14px;
   justify-content: center;
   gap: 7px;
   border-radius: 9px;
   font-weight: 560;
+  line-height: 1;
+  white-space: nowrap;
   transition:
     background 140ms ease,
     transform 140ms ease,
     border-color 140ms ease;
+}
+
+.button svg {
+  flex: 0 0 auto;
 }
 
 .button:hover:not(:disabled) {
