@@ -106,8 +106,8 @@ const STEPS: Array<{ id: Step; label: string }> = [
   { id: "review", label: "Review" },
 ];
 
-const DEMO_WIDTH = 1936;
-const DEMO_HEIGHT = 1216;
+const DEFAULT_CANVAS_WIDTH = 1936;
+const DEFAULT_CANVAS_HEIGHT = 1216;
 
 const initialShapes: RoiShape[] = [
   {
@@ -236,7 +236,7 @@ const canvasToBlob = (canvas: HTMLCanvasElement) =>
   });
 
 export default function Home() {
-  const [step, setStep] = useState<Step>("region");
+  const [step, setStep] = useState<Step>("samples");
   const [profileName, setProfileName] = useState("luks_mini_pos1");
   const [samples, setSamples] = useState<SampleImage[]>([]);
   const [activeSampleId, setActiveSampleId] = useState<string | null>(null);
@@ -291,8 +291,8 @@ export default function Home() {
 
   const activeSample =
     samples.find((sample) => sample.id === activeSampleId) ?? samples[0] ?? null;
-  const sourceWidth = activeSample?.width ?? DEMO_WIDTH;
-  const sourceHeight = activeSample?.height ?? DEMO_HEIGHT;
+  const sourceWidth = activeSample?.width ?? DEFAULT_CANVAS_WIDTH;
+  const sourceHeight = activeSample?.height ?? DEFAULT_CANVAS_HEIGHT;
 
   useEffect(() => {
     return () => {
@@ -887,14 +887,14 @@ export default function Home() {
     });
     checks.push({
       ok:
-        samples.length === 0 ||
+        samples.length > 0 &&
         samples.every(
           (sample) =>
             sample.width === sourceWidth && sample.height === sourceHeight,
         ),
       label:
         samples.length === 0
-          ? "Demo image geometry is available"
+          ? "Add at least one reference image"
           : `${samples.length} reference sample${samples.length === 1 ? "" : "s"} aligned`,
     });
     checks.push({
@@ -1133,32 +1133,7 @@ export default function Home() {
       await image.decode();
       context.drawImage(image, 0, 0, sourceWidth, sourceHeight);
     } else {
-      context.fillStyle = "#d9ded9";
-      context.fillRect(0, 0, sourceWidth, sourceHeight);
-      context.fillStyle = "#aab3ad";
-      context.beginPath();
-      context.ellipse(
-        sourceWidth / 2,
-        sourceHeight / 2,
-        sourceWidth * 0.29,
-        sourceHeight * 0.34,
-        0,
-        0,
-        Math.PI * 2,
-      );
-      context.fill();
-      context.fillStyle = "#d9ded9";
-      context.beginPath();
-      context.ellipse(
-        sourceWidth / 2,
-        sourceHeight / 2,
-        sourceWidth * 0.1,
-        sourceHeight * 0.12,
-        0,
-        0,
-        Math.PI * 2,
-      );
-      context.fill();
+      throw new Error("Add a reference image before creating a preview.");
     }
     shapes.forEach((shape) => {
       drawShapePath(context, shape);
@@ -1468,6 +1443,7 @@ export default function Home() {
 
           <div
             className={`image-stage ${tool !== "select" && step === "region" ? "drawing" : ""}`}
+            style={{ aspectRatio: `${sourceWidth} / ${sourceHeight}` }}
           >
             {activeSample ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -1476,37 +1452,27 @@ export default function Home() {
                 alt={`Reference sample ${activeSample.name}`}
               />
             ) : (
-              <div className="demo-image" aria-label="Built-in demo part">
-                <div className="demo-shadow" />
-                <div className="demo-part">
-                  <div className="demo-hole" />
-                  {Array.from({ length: 7 }, (_, index) => (
-                    <span
-                      key={index}
-                      style={
-                        {
-                          "--index": index,
-                        } as React.CSSProperties
-                      }
-                    />
-                  ))}
-                </div>
+              <div className="image-empty-state" role="status">
+                <ImageIcon size={42} strokeWidth={1.5} aria-hidden="true" />
+                <strong>No image</strong>
+                <span>Upload a reference image to get started</span>
               </div>
             )}
 
-            <svg
-              ref={svgRef}
-              className="interaction-layer"
-              viewBox={`0 0 ${sourceWidth} ${sourceHeight}`}
-              preserveAspectRatio="none"
-              onPointerDown={handleCanvasPointerDown}
-              onPointerMove={handleCanvasPointerMove}
-              onPointerUp={handleCanvasPointerUp}
-              onPointerLeave={handleCanvasPointerUp}
-              onDoubleClick={() => {
-                if (tool === "polygon") finishPolygon();
-              }}
-            >
+            {activeSample && (
+              <svg
+                ref={svgRef}
+                className="interaction-layer"
+                viewBox={`0 0 ${sourceWidth} ${sourceHeight}`}
+                preserveAspectRatio="none"
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onPointerLeave={handleCanvasPointerUp}
+                onDoubleClick={() => {
+                  if (tool === "polygon") finishPolygon();
+                }}
+              >
               {(step === "geometry" || step === "review") &&
                 geometryMode === "crop" && (
                   <g className="crop-overlay">
@@ -1709,18 +1675,27 @@ export default function Home() {
                   />
                 </g>
               )}
-            </svg>
+              </svg>
+            )}
 
             <div className="stage-label">
-              {activeSample?.name ?? "Built-in demo"}
-              <span>
-                {sourceWidth} × {sourceHeight}
-              </span>
+              {activeSample ? (
+                <>
+                  {activeSample.name}
+                  <span>
+                    {sourceWidth} × {sourceHeight}
+                  </span>
+                </>
+              ) : (
+                "No image"
+              )}
             </div>
-            <div className="zoom-label">
-              <Maximize2 size={13} />
-              Fit
-            </div>
+            {activeSample && (
+              <div className="zoom-label">
+                <Maximize2 size={13} />
+                Fit
+              </div>
+            )}
           </div>
 
           <div className="editor-footer">
@@ -1739,12 +1714,12 @@ export default function Home() {
                   </button>
                 ))
               ) : (
-                <span className="demo-pill">DEMO</span>
+                <ImageIcon size={16} aria-hidden="true" />
               )}
               <span>
                 {samples.length
                   ? `${samples.length} aligned sample${samples.length === 1 ? "" : "s"}`
-                  : "Upload samples to replace the demo"}
+                  : "No reference images"}
               </span>
             </div>
             <div className="canvas-status">
@@ -1817,7 +1792,7 @@ export default function Home() {
                     ))
                   ) : (
                     <div className="empty-state">
-                      The built-in demo keeps every editor control available.
+                      No reference images uploaded yet.
                     </div>
                   )}
                 </div>
@@ -1825,10 +1800,8 @@ export default function Home() {
 
               <div className="panel-footer">
                 <div className="footer-status success">
-                  <Check size={15} />
-                  {samples.length
-                    ? "All dimensions match"
-                    : "Demo ready"}
+                  {samples.length ? <Check size={15} /> : <ImageIcon size={15} />}
+                  {samples.length ? "All dimensions match" : "No images"}
                 </div>
                 <button
                   className="button button-primary"

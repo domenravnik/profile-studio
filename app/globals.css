@@ -366,8 +366,6 @@ button:disabled {
   position: relative;
   overflow: hidden;
   width: 100%;
-  aspect-ratio: 16 / 10;
-  min-height: 420px;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: #dfe4df;
@@ -379,7 +377,7 @@ button:disabled {
 }
 
 .image-stage > img,
-.demo-image,
+.image-empty-state,
 .interaction-layer {
   position: absolute;
   inset: 0;
@@ -388,79 +386,27 @@ button:disabled {
 }
 
 .image-stage > img {
-  object-fit: fill;
+  object-fit: contain;
 }
 
-.demo-image {
-  overflow: hidden;
-  background:
-    linear-gradient(rgba(47, 64, 53, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(47, 64, 53, 0.055) 1px, transparent 1px),
-    radial-gradient(circle at 46% 40%, #edf0ed, #cbd2cc 75%);
-  background-size:
-    64px 64px,
-    64px 64px,
-    auto;
+.image-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: var(--surface-soft);
+  color: var(--text-soft);
 }
 
-.demo-shadow,
-.demo-part {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
+.image-empty-state strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 620;
 }
 
-.demo-shadow {
-  width: 59%;
-  height: 70%;
-  transform: translate(-47%, -47%);
-  background: rgba(38, 52, 43, 0.2);
-  filter: blur(18px);
-}
-
-.demo-part {
-  width: 58%;
-  height: 68%;
-  border: 2px solid rgba(54, 69, 60, 0.38);
-  background:
-    radial-gradient(circle at 38% 28%, rgba(255, 255, 255, 0.78), transparent 18%),
-    radial-gradient(ellipse, #f0f2f0 0 32%, #aeb7b1 33% 36%, #e2e6e3 37% 64%, #9da8a1 65% 67%, #d0d6d1 68%);
-  box-shadow:
-    inset 0 0 34px rgba(255, 255, 255, 0.6),
-    inset 0 -18px 30px rgba(41, 54, 46, 0.17);
-}
-
-.demo-hole {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 27%;
-  height: 27%;
-  border: 9px solid rgba(91, 104, 96, 0.5);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  background: #cbd2cc;
-  box-shadow: inset 0 7px 10px rgba(43, 55, 47, 0.2);
-}
-
-.demo-part > span {
-  --angle: calc(var(--index) * 51.428deg);
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 4%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  transform:
-    translate(-50%, -50%)
-    rotate(var(--angle))
-    translateY(-210%);
-  background: #7f8a83;
-  box-shadow:
-    inset 0 2px 2px rgba(255, 255, 255, 0.45),
-    0 1px 3px rgba(44, 57, 49, 0.25);
+.image-empty-state span {
+  font-size: 12px;
 }
 
 .interaction-layer {
@@ -616,8 +562,7 @@ button:disabled {
   gap: 6px;
 }
 
-.sample-pill,
-.demo-pill {
+.sample-pill {
   display: inline-grid;
   width: 30px;
   height: 28px;
@@ -632,8 +577,7 @@ button:disabled {
   color: var(--text-soft);
 }
 
-.sample-pill.active,
-.demo-pill {
+.sample-pill.active {
   background: var(--primary);
   color: #fff;
 }
@@ -1211,10 +1155,6 @@ input[type="range"] {
     grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.8fr);
   }
 
-  .image-stage {
-    min-height: 360px;
-  }
-
   .editor-header {
     align-items: flex-start;
     flex-direction: column;
@@ -1234,9 +1174,6 @@ input[type="range"] {
     order: -1;
   }
 
-  .image-stage {
-    min-height: 320px;
-  }
 }
 
 @media (max-width: 620px) {
@@ -1266,10 +1203,6 @@ input[type="range"] {
 
   .editor-card {
     padding: 12px;
-  }
-
-  .image-stage {
-    min-height: 250px;
   }
 
   .drawing-toolbar {
