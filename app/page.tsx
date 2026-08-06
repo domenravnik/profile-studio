@@ -288,6 +288,7 @@ export default function Home() {
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const samplesRef = useRef<SampleImage[]>([]);
 
   const activeSample =
     samples.find((sample) => sample.id === activeSampleId) ?? samples[0] ?? null;
@@ -295,10 +296,14 @@ export default function Home() {
   const sourceHeight = activeSample?.height ?? DEFAULT_CANVAS_HEIGHT;
 
   useEffect(() => {
-    return () => {
-      samples.forEach((sample) => URL.revokeObjectURL(sample.url));
-    };
+    samplesRef.current = samples;
   }, [samples]);
+
+  useEffect(() => {
+    return () => {
+      samplesRef.current.forEach((sample) => URL.revokeObjectURL(sample.url));
+    };
+  }, []);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("profile-studio-draft");
@@ -628,6 +633,23 @@ export default function Home() {
     if (selectedShapeId === shapeId) setSelectedShapeId(null);
   };
 
+  const removeSample = (sampleId: string) => {
+    const index = samples.findIndex((sample) => sample.id === sampleId);
+    if (index === -1) return;
+
+    const removed = samples[index];
+    const remaining = samples.filter((sample) => sample.id !== sampleId);
+    URL.revokeObjectURL(removed.url);
+    setSamples(remaining);
+
+    if (activeSample?.id === sampleId) {
+      const nextActive = remaining[index] ?? remaining[index - 1] ?? null;
+      setActiveSampleId(nextActive?.id ?? null);
+    }
+
+    setNotice(`${removed.name} removed.`);
+  };
+
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
@@ -657,42 +679,45 @@ export default function Home() {
     );
 
     const first = loaded[0];
+    const expected = samples[0] ?? first;
     const dimensionsMatch = loaded.every(
       (sample) =>
-        sample.width === first.width && sample.height === first.height,
+        sample.width === expected.width && sample.height === expected.height,
     );
     if (!dimensionsMatch) {
       loaded.forEach((sample) => URL.revokeObjectURL(sample.url));
-      setNotice("All reference images must have the same dimensions.");
+      setNotice(
+        `All reference images must be ${expected.width} × ${expected.height}.`,
+      );
       event.target.value = "";
       return;
     }
 
-    samples.forEach((sample) => URL.revokeObjectURL(sample.url));
-    setSamples(loaded);
+    setSamples((current) => [...current, ...loaded]);
     setActiveSampleId(first.id);
-    const cropWidth = Math.max(1, Math.round(first.width * 0.62));
-    const cropHeight = Math.max(1, Math.round(first.height * 0.72));
-    setCropGeometry({
-      x: Math.round((first.width - cropWidth) / 2),
-      y: Math.round((first.height - cropHeight) / 2),
-      width: cropWidth,
-      height: cropHeight,
-    });
-    const outerRadius = Math.round(Math.min(first.width, first.height) * 0.36);
-    setAnnulusGeometry((value) => ({
-      ...value,
-      cx: Math.round(first.width / 2),
-      cy: Math.round(first.height / 2),
-      innerRadius: Math.round(outerRadius * 0.62),
-      outerRadius,
-    }));
-    setShapes([]);
-    setUndoStack([]);
-    setRedoStack([]);
-    setSelectedShapeId(null);
-    setNotice(`${loaded.length} reference image${loaded.length === 1 ? "" : "s"} loaded.`);
-    setStep("geometry");
+    if (!samples.length) {
+      const cropWidth = Math.max(1, Math.round(first.width * 0.62));
+      const cropHeight = Math.max(1, Math.round(first.height * 0.72));
+      setCropGeometry({
+        x: Math.round((first.width - cropWidth) / 2),
+        y: Math.round((first.height - cropHeight) / 2),
+        width: cropWidth,
+        height: cropHeight,
+      });
+      const outerRadius = Math.round(Math.min(first.width, first.height) * 0.36);
+      setAnnulusGeometry((value) => ({
+        ...value,
+        cx: Math.round(first.width / 2),
+        cy: Math.round(first.height / 2),
+        innerRadius: Math.round(outerRadius * 0.62),
+        outerRadius,
+      }));
+      setShapes([]);
+      setUndoStack([]);
+      setRedoStack([]);
+      setSelectedShapeId(null);
+    }
+    setNotice(`${loaded.length} reference image${loaded.length === 1 ? "" : "s"} added.`);
     event.target.value = "";
   };
 
@@ -1690,12 +1715,6 @@ export default function Home() {
                 "No image"
               )}
             </div>
-            {activeSample && (
-              <div className="zoom-label">
-                <Maximize2 size={13} />
-                Fit
-              </div>
-            )}
           </div>
 
           <div className="editor-footer">
@@ -1760,8 +1779,8 @@ export default function Home() {
                 <div className="upload-icon">
                   <Upload size={20} />
                 </div>
-                <strong>Choose reference images</strong>
-                <span>PNG, JPG, BMP, WebP or TIFF</span>
+                <strong>Add reference images</strong>
+                <span>Select one or more · PNG, JPG, BMP, WebP or TIFF</span>
               </button>
 
               <div className="section-block">
@@ -1769,26 +1788,38 @@ export default function Home() {
                 <div className="sample-list">
                   {samples.length ? (
                     samples.map((sample) => (
-                      <button
+                      <div
                         className={`sample-row ${
                           sample.id === activeSample?.id ? "active" : ""
                         }`}
-                        type="button"
                         key={sample.id}
-                        onClick={() => setActiveSampleId(sample.id)}
                       >
-                        <span className="sample-row-icon">
-                          <ImageIcon size={15} />
-                        </span>
-                        <span className="sample-row-copy">
-                          <strong>{sample.name}</strong>
-                          <span>
-                            {sample.width} × {sample.height} ·{" "}
-                            {formatBytes(sample.bytes)}
+                        <button
+                          type="button"
+                          className="sample-main"
+                          onClick={() => setActiveSampleId(sample.id)}
+                        >
+                          <span className="sample-row-icon">
+                            <ImageIcon size={15} />
                           </span>
-                        </span>
-                        <Check size={15} />
-                      </button>
+                          <span className="sample-row-copy">
+                            <strong>{sample.name}</strong>
+                            <span>
+                              {sample.width} × {sample.height} ·{" "}
+                              {formatBytes(sample.bytes)}
+                            </span>
+                          </span>
+                          <Check size={15} />
+                        </button>
+                        <button
+                          className="icon-button danger"
+                          type="button"
+                          aria-label={`Remove ${sample.name}`}
+                          onClick={() => removeSample(sample.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     ))
                   ) : (
                     <div className="empty-state">

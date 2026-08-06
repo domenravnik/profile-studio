@@ -88,8 +88,7 @@ button:disabled {
 .bundle-row,
 .validation-row,
 .tile-legend,
-.stage-label,
-.zoom-label {
+.stage-label {
   display: flex;
   align-items: center;
 }
@@ -146,7 +145,6 @@ button:disabled {
 .text-button,
 .step-button,
 .segmented-control button,
-.sample-row,
 .shape-row,
 .upload-zone {
   border: 0;
@@ -520,8 +518,7 @@ button:disabled {
   stroke-dasharray: 12 9;
 }
 
-.stage-label,
-.zoom-label {
+.stage-label {
   position: absolute;
   z-index: 4;
   gap: 7px;
@@ -542,11 +539,6 @@ button:disabled {
 
 .stage-label span {
   color: var(--text-soft);
-}
-
-.zoom-label {
-  right: 10px;
-  bottom: 10px;
 }
 
 .editor-footer {
@@ -792,6 +784,7 @@ input[type="range"] {
 
 .sample-row,
 .shape-row,
+.sample-main,
 .shape-main {
   display: flex;
   width: 100%;
@@ -809,6 +802,7 @@ input[type="range"] {
   text-align: left;
 }
 
+.sample-main,
 .shape-main {
   min-width: 0;
   flex: 1;
@@ -889,6 +883,7 @@ input[type="range"] {
   color: var(--exclude);
 }
 
+.sample-row > .icon-button,
 .shape-row > .icon-button {
   margin-left: auto;
 }
