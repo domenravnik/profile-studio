@@ -2558,10 +2558,30 @@ function NumberField({
   min?: number;
   onChange: (value: number) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+
+    const handleFocusedWheel = (event: WheelEvent) => {
+      if (document.activeElement !== input || event.deltaY === 0) return;
+
+      event.preventDefault();
+      if (event.deltaY < 0) input.stepUp();
+      else input.stepDown();
+      onChange(input.valueAsNumber);
+    };
+
+    input.addEventListener("wheel", handleFocusedWheel, { passive: false });
+    return () => input.removeEventListener("wheel", handleFocusedWheel);
+  }, [onChange]);
+
   return (
     <label className="number-field">
       <span>{label}</span>
       <input
+        ref={inputRef}
         type="number"
         value={Number.isFinite(value) ? value : ""}
         min={min}
