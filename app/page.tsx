@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Circle,
   Crop,
-  Download,
   FileCheck2,
   FileJson,
   FolderArchive,
@@ -27,6 +26,7 @@ import {
 import JSZip from "jszip";
 import {
   ChangeEvent,
+  MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
@@ -72,6 +72,8 @@ type SampleImage = {
 type CropGeometry = { x: number; y: number; width: number; height: number };
 type CropCorner = "north-west" | "north-east" | "south-west" | "south-east";
 type AnnulusControl = "move" | "inner-radius" | "outer-radius";
+type EllipseAxis = "horizontal" | "vertical";
+type DynamicEllipseControl = "move" | "minimum" | "maximum";
 type AnnulusGeometry = {
   cx: number;
   cy: number;
@@ -89,6 +91,20 @@ type DragState =
       original: RoiShape;
     }
   | {
+      kind: "polygon-point";
+      shapeId: string;
+      pointIndex: number;
+      start: Point;
+      original: PolygonShape;
+    }
+  | {
+      kind: "ellipse-radius";
+      shapeId: string;
+      axis: EllipseAxis;
+      start: Point;
+      original: EllipseShape;
+    }
+  | {
       kind: "crop";
       corner?: CropCorner;
       start: Point;
@@ -99,6 +115,14 @@ type DragState =
       control: AnnulusControl;
       start: Point;
       original: AnnulusGeometry;
+    }
+  | {
+      kind: "dynamic-ellipse";
+      control: DynamicEllipseControl;
+      start: Point;
+      originalCenter: Point;
+      originalMin: number;
+      originalMax: number;
     }
   | null;
 
@@ -231,6 +255,30 @@ const drawShapePath = (
   }
 };
 
+const renderMask = (
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  shapes: RoiShape[],
+) => {
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, width, height);
+  shapes
+    .filter((shape) => shape.operation === "include")
+    .forEach((shape) => {
+      drawShapePath(context, shape);
+      context.fillStyle = "#fff";
+      context.fill();
+    });
+  shapes
+    .filter((shape) => shape.operation === "exclude")
+    .forEach((shape) => {
+      drawShapePath(context, shape);
+      context.fillStyle = "#000";
+      context.fill();
+    });
+};
+
 const canvasToBlob = (canvas: HTMLCanvasElement) =>
   new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -259,23 +307,24 @@ export default function Home() {
     stripHeight: 64,
     stripWidth: 2048,
   });
-  const [regionMode, setRegionMode] = useState<RegionMode>("static");
+  const [regionMode, setRegionMode] = useState<RegionMode>("none");
   const [tool, setTool] = useState<DrawingTool>("select");
   const [operation, setOperation] = useState<Operation>("include");
   const [shapes, setShapes] = useState<RoiShape[]>(initialShapes);
   const [undoStack, setUndoStack] = useState<RoiShape[][]>([]);
   const [redoStack, setRedoStack] = useState<RoiShape[][]>([]);
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(
-    "shape-boundary",
-  );
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [draftPolygon, setDraftPolygon] = useState<Point[]>([]);
   const [ellipseStart, setEllipseStart] = useState<Point | null>(null);
   const [ellipseCurrent, setEllipseCurrent] = useState<Point | null>(null);
   const [dragState, setDragState] = useState<DragState>(null);
-  const [overlayOpacity, setOverlayOpacity] = useState(26);
   const [maskName, setMaskName] = useState("luks_mini_pos1_roi.png");
   const [dynamicMin, setDynamicMin] = useState(400);
   const [dynamicMax, setDynamicMax] = useState(510);
+  const [dynamicCenter, setDynamicCenter] = useState<Point>({
+    x: DEFAULT_CANVAS_WIDTH / 2,
+    y: DEFAULT_CANVAS_HEIGHT / 2,
+  });
   const [inputHeight, setInputHeight] = useState(256);
   const [inputWidth, setInputWidth] = useState(256);
   const [tilingEnabled, setTilingEnabled] = useState(true);
@@ -292,12 +341,23 @@ export default function Home() {
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const maskPreviewRef = useRef<HTMLCanvasElement>(null);
   const samplesRef = useRef<SampleImage[]>([]);
 
   const activeSample =
     samples.find((sample) => sample.id === activeSampleId) ?? samples[0] ?? null;
   const sourceWidth = activeSample?.width ?? DEFAULT_CANVAS_WIDTH;
   const sourceHeight = activeSample?.height ?? DEFAULT_CANVAS_HEIGHT;
+
+  useEffect(() => {
+    const canvas = maskPreviewRef.current;
+    if (!canvas) return;
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    renderMask(context, sourceWidth, sourceHeight, shapes);
+  }, [shapes, sourceWidth, sourceHeight, regionMode]);
 
   useEffect(() => {
     samplesRef.current = samples;
@@ -362,7 +422,11 @@ export default function Home() {
     setTool("select");
   };
 
-  const getCanvasPoint = (event: ReactPointerEvent<SVGSVGElement>): Point => {
+  const getCanvasPoint = (
+    event:
+      | ReactPointerEvent<SVGSVGElement>
+      | ReactMouseEvent<SVGSVGElement>,
+  ): Point => {
     const bounds = event.currentTarget.getBoundingClientRect();
     return {
       x: clamp(
@@ -431,10 +495,30 @@ export default function Home() {
       return;
     }
 
+    if (step === "region" && regionMode === "dynamic") {
+      const controlElement = (event.target as Element).closest<SVGElement>(
+        "[data-dynamic-control]",
+      );
+      const control = controlElement?.dataset.dynamicControl as
+        | DynamicEllipseControl
+        | undefined;
+      if (control) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setDragState({
+          kind: "dynamic-ellipse",
+          control,
+          start: point,
+          originalCenter: dynamicCenter,
+          originalMin: dynamicMin,
+          originalMax: dynamicMax,
+        });
+      }
+      return;
+    }
+
     if (step !== "region" || regionMode !== "static") return;
 
     if (tool === "polygon") {
-      setDraftPolygon((points) => [...points, point]);
       return;
     }
 
@@ -447,6 +531,18 @@ export default function Home() {
     if (tool === "select") {
       setSelectedShapeId(null);
     }
+  };
+
+  const handleCanvasClick = (event: ReactMouseEvent<SVGSVGElement>) => {
+    if (
+      step !== "region" ||
+      regionMode !== "static" ||
+      tool !== "polygon" ||
+      event.detail !== 1
+    ) {
+      return;
+    }
+    setDraftPolygon((points) => [...points, getCanvasPoint(event)]);
   };
 
   const handleCanvasPointerMove = (
@@ -573,6 +669,85 @@ export default function Home() {
       return;
     }
 
+    if (dragState.kind === "dynamic-ellipse") {
+      if (dragState.control !== "move") {
+        const diameter =
+          Math.hypot(
+            point.x - dragState.originalCenter.x,
+            point.y - dragState.originalCenter.y,
+          ) * 2;
+        if (dragState.control === "minimum") {
+          setDynamicMin(
+            safeInteger(clamp(diameter, 1, dragState.originalMax - 1)),
+          );
+        } else {
+          const maximumDiameter =
+            Math.min(
+              dragState.originalCenter.x,
+              sourceWidth - dragState.originalCenter.x,
+              dragState.originalCenter.y,
+              sourceHeight - dragState.originalCenter.y,
+            ) * 2;
+          setDynamicMax(
+            safeInteger(
+              clamp(diameter, dragState.originalMin + 1, maximumDiameter),
+            ),
+          );
+        }
+        return;
+      }
+
+      const radius = dragState.originalMax / 2;
+      setDynamicCenter({
+        x: safeInteger(
+          clamp(dragState.originalCenter.x + dx, radius, sourceWidth - radius),
+        ),
+        y: safeInteger(
+          clamp(
+            dragState.originalCenter.y + dy,
+            radius,
+            sourceHeight - radius,
+          ),
+        ),
+      });
+      return;
+    }
+
+    if (dragState.kind === "polygon-point") {
+      setShapes((current) =>
+        current.map((shape) =>
+          shape.id === dragState.shapeId && shape.type === "polygon"
+            ? {
+                ...dragState.original,
+                points: dragState.original.points.map((vertex, index) =>
+                  index === dragState.pointIndex ? point : vertex,
+                ),
+              }
+            : shape,
+        ),
+      );
+      return;
+    }
+
+    if (dragState.kind === "ellipse-radius") {
+      setShapes((current) =>
+        current.map((shape) => {
+          if (shape.id !== dragState.shapeId || shape.type !== "ellipse")
+            return shape;
+          return dragState.axis === "horizontal"
+            ? {
+                ...dragState.original,
+                rx: Math.abs(point.x - dragState.original.cx),
+              }
+            : {
+                ...dragState.original,
+                ry: Math.abs(point.y - dragState.original.cy),
+              };
+        }),
+      );
+      return;
+    }
+
     setShapes((current) =>
       current.map((shape) =>
         shape.id === dragState.shapeId
@@ -608,7 +783,11 @@ export default function Home() {
       return;
     }
 
-    if (dragState?.kind === "shape") {
+    if (
+      dragState?.kind === "shape" ||
+      dragState?.kind === "polygon-point" ||
+      dragState?.kind === "ellipse-radius"
+    ) {
       setUndoStack((history) => [
         ...history.slice(-39),
         shapes.map((shape) =>
@@ -629,12 +808,57 @@ export default function Home() {
     setSelectedShapeId(shape.id);
     const svg = svgRef.current;
     if (!svg) return;
+    svg.setPointerCapture(event.pointerId);
     const bounds = svg.getBoundingClientRect();
     const start = {
       x: ((event.clientX - bounds.left) / bounds.width) * sourceWidth,
       y: ((event.clientY - bounds.top) / bounds.height) * sourceHeight,
     };
     setDragState({ kind: "shape", shapeId: shape.id, start, original: shape });
+  };
+
+  const startPolygonPointDrag = (
+    event: ReactPointerEvent<SVGCircleElement>,
+    shape: PolygonShape,
+    pointIndex: number,
+  ) => {
+    if (tool !== "select" || step !== "region") return;
+    event.stopPropagation();
+    const start = {
+      x: shape.points[pointIndex].x,
+      y: shape.points[pointIndex].y,
+    };
+    svgRef.current?.setPointerCapture(event.pointerId);
+    setSelectedShapeId(shape.id);
+    setDragState({
+      kind: "polygon-point",
+      shapeId: shape.id,
+      pointIndex,
+      start,
+      original: shape,
+    });
+  };
+
+  const startEllipseRadiusDrag = (
+    event: ReactPointerEvent<SVGCircleElement>,
+    shape: EllipseShape,
+    axis: EllipseAxis,
+  ) => {
+    if (tool !== "select" || step !== "region") return;
+    event.stopPropagation();
+    const start = {
+      x: axis === "horizontal" ? shape.cx + shape.rx : shape.cx,
+      y: axis === "vertical" ? shape.cy + shape.ry : shape.cy,
+    };
+    svgRef.current?.setPointerCapture(event.pointerId);
+    setSelectedShapeId(shape.id);
+    setDragState({
+      kind: "ellipse-radius",
+      shapeId: shape.id,
+      axis,
+      start,
+      original: shape,
+    });
   };
 
   const removeShape = (shapeId: string) => {
@@ -721,6 +945,10 @@ export default function Home() {
         innerRadius: Math.round(outerRadius * 0.62),
         outerRadius,
       }));
+      setDynamicCenter({
+        x: Math.round(first.width / 2),
+        y: Math.round(first.height / 2),
+      });
       setShapes([]);
       setUndoStack([]);
       setRedoStack([]);
@@ -968,7 +1196,7 @@ export default function Home() {
           : dynamicMin > 0 && dynamicMax > dynamicMin),
       label:
         regionMode === "static"
-          ? "Valid-region mask contains an included area"
+          ? "Valid-region mask includes an inspection area"
           : regionMode === "dynamic"
             ? "Dynamic ellipse diameter range is valid"
             : "Entire processed image is valid",
@@ -1136,22 +1364,7 @@ export default function Home() {
     canvas.height = sourceHeight;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas is unavailable.");
-    context.fillStyle = "#000";
-    context.fillRect(0, 0, sourceWidth, sourceHeight);
-    shapes
-      .filter((shape) => shape.operation === "include")
-      .forEach((shape) => {
-        drawShapePath(context, shape);
-        context.fillStyle = "#fff";
-        context.fill();
-      });
-    shapes
-      .filter((shape) => shape.operation === "exclude")
-      .forEach((shape) => {
-        drawShapePath(context, shape);
-        context.fillStyle = "#000";
-        context.fill();
-      });
+    renderMask(context, sourceWidth, sourceHeight, shapes);
     return canvasToBlob(canvas);
   };
 
@@ -1225,6 +1438,7 @@ export default function Home() {
               mode: regionMode,
               shapes,
               dynamic_diameter_range: [dynamicMin, dynamicMax],
+              dynamic_center: dynamicCenter,
             },
             profile,
           },
@@ -1287,9 +1501,15 @@ export default function Home() {
     setProfileName("luks_mini_pos1");
     setGeometryMode("crop");
     setCropGeometry({ x: 549, y: 198, width: 768, height: 768 });
-    setRegionMode("static");
+    setRegionMode("none");
+    setOperation("include");
     setShapes(initialShapes);
     setMaskName("luks_mini_pos1_roi.png");
+    setSelectedShapeId(null);
+    setDynamicCenter({
+      x: DEFAULT_CANVAS_WIDTH / 2,
+      y: DEFAULT_CANVAS_HEIGHT / 2,
+    });
     setInputHeight(256);
     setInputWidth(256);
     setTilingEnabled(true);
@@ -1503,8 +1723,15 @@ export default function Home() {
                 onPointerMove={handleCanvasPointerMove}
                 onPointerUp={handleCanvasPointerUp}
                 onPointerLeave={handleCanvasPointerUp}
+                onClick={handleCanvasClick}
                 onDoubleClick={() => {
-                  if (tool === "polygon") finishPolygon();
+                  if (
+                    step === "region" &&
+                    regionMode === "static" &&
+                    tool === "polygon"
+                  ) {
+                    finishPolygon();
+                  }
                 }}
               >
               {(step === "geometry" || step === "review") &&
@@ -1630,10 +1857,7 @@ export default function Home() {
                 step === "model" ||
                 step === "review") &&
                 regionMode === "static" && (
-                  <g
-                    className="roi-shapes"
-                    style={{ opacity: overlayOpacity / 100 + 0.35 }}
-                  >
+                  <g className="roi-shapes">
                     {shapes.map((shape) => {
                       const className = [
                         "roi-shape",
@@ -1663,24 +1887,54 @@ export default function Home() {
                                   r={
                                     Math.max(sourceWidth, sourceHeight) * 0.007
                                   }
-                                  className="roi-handle"
+                                  className={`roi-handle ${shape.operation}`}
+                                  onPointerDown={(event) =>
+                                    startPolygonPointDrag(event, shape, index)
+                                  }
                                 />
                               ))}
                           </g>
                         );
                       }
                       return (
-                        <ellipse
-                          key={shape.id}
-                          cx={shape.cx}
-                          cy={shape.cy}
-                          rx={shape.rx}
-                          ry={shape.ry}
-                          className={className}
-                          onPointerDown={(event) =>
-                            startShapeDrag(event, shape)
-                          }
-                        />
+                        <g key={shape.id}>
+                          <ellipse
+                            cx={shape.cx}
+                            cy={shape.cy}
+                            rx={shape.rx}
+                            ry={shape.ry}
+                            className={className}
+                            onPointerDown={(event) =>
+                              startShapeDrag(event, shape)
+                            }
+                          />
+                          {selectedShapeId === shape.id && (
+                            <>
+                              <circle
+                                cx={shape.cx + shape.rx}
+                                cy={shape.cy}
+                                r={Math.max(sourceWidth, sourceHeight) * 0.007}
+                                className={`roi-handle horizontal ${shape.operation}`}
+                                onPointerDown={(event) =>
+                                  startEllipseRadiusDrag(
+                                    event,
+                                    shape,
+                                    "horizontal",
+                                  )
+                                }
+                              />
+                              <circle
+                                cx={shape.cx}
+                                cy={shape.cy + shape.ry}
+                                r={Math.max(sourceWidth, sourceHeight) * 0.007}
+                                className={`roi-handle vertical ${shape.operation}`}
+                                onPointerDown={(event) =>
+                                  startEllipseRadiusDrag(event, shape, "vertical")
+                                }
+                              />
+                            </>
+                          )}
+                        </g>
                       );
                     })}
 
@@ -1690,7 +1944,7 @@ export default function Home() {
                           points={draftPolygon
                             .map((point) => `${point.x},${point.y}`)
                             .join(" ")}
-                          className="draft-shape"
+                          className={`draft-shape ${operation}`}
                         />
                         {draftPolygon.map((point, index) => (
                           <circle
@@ -1698,7 +1952,7 @@ export default function Home() {
                             cx={point.x}
                             cy={point.y}
                             r={Math.max(sourceWidth, sourceHeight) * 0.007}
-                            className="roi-handle"
+                            className={`roi-handle ${operation}`}
                           />
                         ))}
                       </g>
@@ -1743,19 +1997,62 @@ export default function Home() {
               {step === "region" && regionMode === "dynamic" && (
                 <g className="dynamic-ellipse">
                   <ellipse
-                    cx={sourceWidth / 2}
-                    cy={sourceHeight / 2}
+                    cx={dynamicCenter.x}
+                    cy={dynamicCenter.y}
                     rx={dynamicMax / 2}
                     ry={dynamicMax / 2}
                     className="dynamic-max"
                   />
                   <ellipse
-                    cx={sourceWidth / 2}
-                    cy={sourceHeight / 2}
+                    cx={dynamicCenter.x}
+                    cy={dynamicCenter.y}
                     rx={dynamicMin / 2}
                     ry={dynamicMin / 2}
                     className="dynamic-min"
                   />
+                  <circle
+                    cx={dynamicCenter.x + dynamicMax / 2}
+                    cy={dynamicCenter.y}
+                    r={Math.max(sourceWidth, sourceHeight) * 0.0075}
+                    className="geometry-handle dynamic-handle"
+                    data-dynamic-control="maximum"
+                  />
+                  <circle
+                    cx={dynamicCenter.x + dynamicMin / 2}
+                    cy={dynamicCenter.y}
+                    r={Math.max(sourceWidth, sourceHeight) * 0.0075}
+                    className="geometry-handle dynamic-handle"
+                    data-dynamic-control="minimum"
+                  />
+                  <g
+                    className="dynamic-center-control"
+                    data-dynamic-control="move"
+                  >
+                    <circle
+                      cx={dynamicCenter.x}
+                      cy={dynamicCenter.y}
+                      r={Math.max(sourceWidth, sourceHeight) * 0.014}
+                      className="dynamic-center-hit"
+                    />
+                    <line
+                      x1={
+                        dynamicCenter.x -
+                        Math.max(sourceWidth, sourceHeight) * 0.009
+                      }
+                      y1={dynamicCenter.y}
+                      x2={
+                        dynamicCenter.x +
+                        Math.max(sourceWidth, sourceHeight) * 0.009
+                      }
+                      y2={dynamicCenter.y}
+                    />
+                    <line
+                      x1={dynamicCenter.x}
+                      y1={dynamicCenter.y - Math.max(sourceWidth, sourceHeight) * 0.009}
+                      x2={dynamicCenter.x}
+                      y2={dynamicCenter.y + Math.max(sourceWidth, sourceHeight) * 0.009}
+                    />
+                  </g>
                 </g>
               )}
               </svg>
@@ -2110,11 +2407,11 @@ export default function Home() {
                     setRegionMode(event.target.value as RegionMode)
                   }
                 >
+                  <option value="none">No valid region</option>
                   <option value="static">Static mask — draw shapes</option>
                   <option value="dynamic">
                     Dynamic ellipse — detect per image
                   </option>
-                  <option value="none">No valid region</option>
                 </select>
               </div>
 
@@ -2223,15 +2520,10 @@ export default function Home() {
 
                   {draftPolygon.length > 0 && (
                     <div className="draft-actions">
-                      <span>{draftPolygon.length} polygon points</span>
-                      <button
-                        type="button"
-                        className="button button-secondary compact"
-                        disabled={draftPolygon.length < 3}
-                        onClick={finishPolygon}
-                      >
-                        Finish polygon
-                      </button>
+                      <span className="draft-count">
+                        {draftPolygon.length} polygon points
+                      </span>
+                      <span className="draft-hint">Double-click to finish</span>
                       <button
                         className="icon-button"
                         type="button"
@@ -2246,25 +2538,26 @@ export default function Home() {
                   {selectedShape && (
                     <div className="selected-shape-note">
                       <MousePointer2 size={15} />
-                      Drag the selected {selectedShape.type} to reposition it.
+                      Drag the shape to move it, or drag its handles to edit it.
                     </div>
                   )}
 
-                  <div className="field-group">
-                    <label className="field-label" htmlFor="opacity">
-                      Overlay opacity <span>{overlayOpacity}%</span>
-                    </label>
-                    <input
-                      id="opacity"
-                      type="range"
-                      min={8}
-                      max={55}
-                      value={overlayOpacity}
-                      onChange={(event) =>
-                        setOverlayOpacity(Number(event.target.value))
-                      }
+                  <div className="mask-preview-block">
+                    <div className="section-heading">
+                      <div className="section-label">FINAL MASK · LIVE</div>
+                      <div className="mask-preview-legend" aria-hidden="true">
+                        <span className="mask-swatch valid" /> Included
+                        <span className="mask-swatch ignored" /> Excluded
+                      </div>
+                    </div>
+                    <canvas
+                      ref={maskPreviewRef}
+                      className="mask-preview-canvas"
+                      style={{ aspectRatio: `${sourceWidth} / ${sourceHeight}` }}
+                      aria-label="Live final valid-region mask preview"
                     />
                   </div>
+
                   <div className="field-group">
                     <label className="field-label" htmlFor="mask-name">
                       Mask filename
@@ -2290,7 +2583,7 @@ export default function Home() {
                       <strong>Detected separately in every image</strong>
                       <span>
                         Diameters are measured after preprocessing and before
-                        model resize.
+                        model resize. Drag the + to reposition the preview.
                       </span>
                     </div>
                   </div>

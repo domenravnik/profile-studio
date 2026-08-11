@@ -483,6 +483,10 @@ button:disabled {
   stroke-dasharray: 13 9;
 }
 
+.roi-shapes polygon.roi-shape {
+  stroke-dasharray: none;
+}
+
 .roi-shape.selected {
   stroke-width: 3;
   filter: drop-shadow(0 2px 2px rgba(33, 50, 40, 0.18));
@@ -493,7 +497,25 @@ button:disabled {
   stroke: var(--include);
   stroke-width: 3;
   vector-effect: non-scaling-stroke;
-  pointer-events: none;
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.roi-handle.horizontal,
+.dynamic-handle {
+  cursor: ew-resize;
+}
+
+.geometry-handle.dynamic-handle {
+  stroke: var(--include);
+}
+
+.roi-handle.vertical {
+  cursor: ns-resize;
+}
+
+.roi-handle.exclude {
+  stroke: var(--exclude);
 }
 
 .draft-shape {
@@ -502,6 +524,10 @@ button:disabled {
   stroke-width: 3;
   stroke-dasharray: 10 8;
   vector-effect: non-scaling-stroke;
+}
+
+.draft-shape.exclude {
+  stroke: var(--exclude);
 }
 
 .tile {
@@ -540,6 +566,20 @@ button:disabled {
 .dynamic-min {
   fill: transparent;
   stroke-dasharray: 12 9;
+}
+
+.dynamic-center-control {
+  cursor: move;
+}
+
+.dynamic-center-hit {
+  fill: transparent;
+}
+
+.dynamic-center-control line {
+  stroke: var(--include);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
 }
 
 .stage-label {
@@ -715,10 +755,6 @@ input[type="range"] {
   color: var(--text);
   font-weight: 650;
   box-shadow: 0 2px 8px rgba(36, 49, 40, 0.09);
-}
-
-.segmented-control button.exclude.active {
-  color: #8e4139;
 }
 
 .derived-row,
@@ -922,6 +958,48 @@ input[type="range"] {
   text-align: center;
 }
 
+.mask-preview-block {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.mask-preview-legend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-soft);
+  font-size: 10px;
+}
+
+.mask-preview-legend .mask-swatch.ignored {
+  margin-left: 4px;
+}
+
+.mask-swatch {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+}
+
+.mask-swatch.valid {
+  background: #fff;
+}
+
+.mask-swatch.ignored {
+  background: #101410;
+}
+
+.mask-preview-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #000;
+}
+
 .draft-actions,
 .selected-shape-note {
   gap: 7px;
@@ -929,12 +1007,27 @@ input[type="range"] {
 }
 
 .draft-actions {
-  justify-content: space-between;
-  padding: 7px 8px;
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  gap: 10px;
+  padding: 6px 7px 6px 10px;
   border-radius: 8px;
   background: var(--primary-soft);
   color: #41624e;
   font-size: 11px;
+}
+
+.draft-count {
+  font-weight: 650;
+}
+
+.draft-hint {
+  color: var(--text-soft);
+}
+
+.draft-actions .icon-button {
+  width: 26px;
+  height: 26px;
 }
 
 .selected-shape-note {
