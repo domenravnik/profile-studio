@@ -70,6 +70,8 @@ type SampleImage = {
 };
 
 type CropGeometry = { x: number; y: number; width: number; height: number };
+type CropCorner = "north-west" | "north-east" | "south-west" | "south-east";
+type AnnulusControl = "move" | "inner-radius" | "outer-radius";
 type AnnulusGeometry = {
   cx: number;
   cy: number;
@@ -88,11 +90,13 @@ type DragState =
     }
   | {
       kind: "crop";
+      corner?: CropCorner;
       start: Point;
       original: CropGeometry;
     }
   | {
       kind: "annulus";
+      control: AnnulusControl;
       start: Point;
       original: AnnulusGeometry;
     }
@@ -306,97 +310,18 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("profile-studio-draft");
-    if (!saved) return;
-    try {
-      const draft = JSON.parse(saved) as {
-        profileName?: string;
-        geometryMode?: GeometryMode;
-        cropGeometry?: CropGeometry;
-        annulusGeometry?: AnnulusGeometry;
-        regionMode?: RegionMode;
-        shapes?: RoiShape[];
-        maskName?: string;
-        inputHeight?: number;
-        inputWidth?: number;
-        tilingEnabled?: boolean;
-        tileHeight?: number;
-        tileWidth?: number;
-        strideHeight?: number;
-        strideWidth?: number;
-        artifactEnabled?: boolean;
-        artifactWidth?: number;
-        artifactHeight?: number;
-      };
-      if (draft.profileName) setProfileName(draft.profileName);
-      if (draft.geometryMode) setGeometryMode(draft.geometryMode);
-      if (draft.cropGeometry) setCropGeometry(draft.cropGeometry);
-      if (draft.annulusGeometry) setAnnulusGeometry(draft.annulusGeometry);
-      if (draft.regionMode) setRegionMode(draft.regionMode);
-      if (draft.shapes?.length) setShapes(draft.shapes);
-      if (draft.maskName) setMaskName(draft.maskName);
-      if (draft.inputHeight) setInputHeight(draft.inputHeight);
-      if (draft.inputWidth) setInputWidth(draft.inputWidth);
-      if (typeof draft.tilingEnabled === "boolean")
-        setTilingEnabled(draft.tilingEnabled);
-      if (draft.tileHeight) setTileHeight(draft.tileHeight);
-      if (draft.tileWidth) setTileWidth(draft.tileWidth);
-      if (draft.strideHeight) setStrideHeight(draft.strideHeight);
-      if (draft.strideWidth) setStrideWidth(draft.strideWidth);
-      if (typeof draft.artifactEnabled === "boolean")
-        setArtifactEnabled(draft.artifactEnabled);
-      if (draft.artifactWidth) setArtifactWidth(draft.artifactWidth);
-      if (draft.artifactHeight) setArtifactHeight(draft.artifactHeight);
-    } catch {
-      window.localStorage.removeItem("profile-studio-draft");
-    }
-  }, []);
+    // Drafts are intentionally session-only. Remove data written by older
+    // versions of the studio so a reload always starts from the defaults.
+    window.localStorage.removeItem("profile-studio-draft");
 
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      window.localStorage.setItem(
-        "profile-studio-draft",
-        JSON.stringify({
-          profileName,
-          geometryMode,
-          cropGeometry,
-          annulusGeometry,
-          regionMode,
-          shapes,
-          maskName,
-          inputHeight,
-          inputWidth,
-          tilingEnabled,
-          tileHeight,
-          tileWidth,
-          strideHeight,
-          strideWidth,
-          artifactEnabled,
-          artifactWidth,
-          artifactHeight,
-        }),
-      );
-    }, 250);
-    return () => window.clearTimeout(timeout);
-  }, [
-    profileName,
-    geometryMode,
-    cropGeometry,
-    annulusGeometry,
-    regionMode,
-    shapes,
-    maskName,
-    inputHeight,
-    inputWidth,
-    tilingEnabled,
-    tileHeight,
-    tileWidth,
-    strideHeight,
-    strideWidth,
-    artifactEnabled,
-    artifactWidth,
-    artifactHeight,
-  ]);
+    const confirmDiscard = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = true;
+    };
+
+    window.addEventListener("beforeunload", confirmDiscard);
+    return () => window.removeEventListener("beforeunload", confirmDiscard);
+  }, []);
 
   const updateShapes = (next: RoiShape[]) => {
     setUndoStack((history) => [...history.slice(-39), shapes]);
@@ -460,14 +385,19 @@ export default function Home() {
     const point = getCanvasPoint(event);
 
     if (step === "geometry" && geometryMode === "crop") {
+      const corner = (event.target as SVGElement).dataset.cropCorner as
+        | CropCorner
+        | undefined;
       const inside =
         point.x >= cropGeometry.x &&
         point.x <= cropGeometry.x + cropGeometry.width &&
         point.y >= cropGeometry.y &&
         point.y <= cropGeometry.y + cropGeometry.height;
-      if (inside) {
+      if (corner || inside) {
+        event.currentTarget.setPointerCapture(event.pointerId);
         setDragState({
           kind: "crop",
+          corner,
           start: point,
           original: cropGeometry,
         });
@@ -476,13 +406,24 @@ export default function Home() {
     }
 
     if (step === "geometry" && geometryMode === "annulus") {
+      const controlElement = (event.target as Element).closest<SVGElement>(
+        "[data-annulus-control]",
+      );
+      const control = controlElement?.dataset.annulusControl as
+        | AnnulusControl
+        | undefined;
       const distance = Math.hypot(
         point.x - annulusGeometry.cx,
         point.y - annulusGeometry.cy,
       );
-      if (distance <= annulusGeometry.outerRadius) {
+      const insideBand =
+        distance >= annulusGeometry.innerRadius &&
+        distance <= annulusGeometry.outerRadius;
+      if (control || insideBand) {
+        event.currentTarget.setPointerCapture(event.pointerId);
         setDragState({
           kind: "annulus",
+          control: control ?? "move",
           start: point,
           original: annulusGeometry,
         });
@@ -523,6 +464,43 @@ export default function Home() {
     const dy = point.y - dragState.start.y;
 
     if (dragState.kind === "crop") {
+      if (dragState.corner) {
+        const originalLeft = dragState.original.x;
+        const originalTop = dragState.original.y;
+        const originalRight = originalLeft + dragState.original.width;
+        const originalBottom = originalTop + dragState.original.height;
+        const movesLeft = dragState.corner.endsWith("west");
+        const movesTop = dragState.corner.startsWith("north");
+        const left = safeInteger(
+          movesLeft
+            ? clamp(originalLeft + dx, 0, originalRight - 1)
+            : originalLeft,
+        );
+        const right = safeInteger(
+          movesLeft
+            ? originalRight
+            : clamp(originalRight + dx, originalLeft + 1, sourceWidth),
+        );
+        const top = safeInteger(
+          movesTop
+            ? clamp(originalTop + dy, 0, originalBottom - 1)
+            : originalTop,
+        );
+        const bottom = safeInteger(
+          movesTop
+            ? originalBottom
+            : clamp(originalBottom + dy, originalTop + 1, sourceHeight),
+        );
+
+        setCropGeometry({
+          x: left,
+          y: top,
+          width: right - left,
+          height: bottom - top,
+        });
+        return;
+      }
+
       setCropGeometry({
         ...dragState.original,
         x: safeInteger(
@@ -544,6 +522,37 @@ export default function Home() {
     }
 
     if (dragState.kind === "annulus") {
+      if (dragState.control !== "move") {
+        const radius = Math.hypot(
+          point.x - dragState.original.cx,
+          point.y - dragState.original.cy,
+        );
+
+        if (dragState.control === "inner-radius") {
+          setAnnulusGeometry({
+            ...dragState.original,
+            innerRadius: safeInteger(
+              clamp(radius, 1, dragState.original.outerRadius - 1),
+            ),
+          });
+          return;
+        }
+
+        const maximumRadius = Math.min(
+          dragState.original.cx,
+          sourceWidth - dragState.original.cx,
+          dragState.original.cy,
+          sourceHeight - dragState.original.cy,
+        );
+        setAnnulusGeometry({
+          ...dragState.original,
+          outerRadius: safeInteger(
+            clamp(radius, dragState.original.innerRadius + 1, maximumRadius),
+          ),
+        });
+        return;
+      }
+
       setAnnulusGeometry({
         ...dragState.original,
         cx: safeInteger(
@@ -1513,26 +1522,34 @@ export default function Home() {
                       className="geometry-line"
                     />
                     {[
-                      [cropGeometry.x, cropGeometry.y],
-                      [
-                        cropGeometry.x + cropGeometry.width,
-                        cropGeometry.y,
-                      ],
-                      [
-                        cropGeometry.x,
-                        cropGeometry.y + cropGeometry.height,
-                      ],
-                      [
-                        cropGeometry.x + cropGeometry.width,
-                        cropGeometry.y + cropGeometry.height,
-                      ],
-                    ].map(([x, y], index) => (
+                      {
+                        x: cropGeometry.x,
+                        y: cropGeometry.y,
+                        corner: "north-west" as const,
+                      },
+                      {
+                        x: cropGeometry.x + cropGeometry.width,
+                        y: cropGeometry.y,
+                        corner: "north-east" as const,
+                      },
+                      {
+                        x: cropGeometry.x,
+                        y: cropGeometry.y + cropGeometry.height,
+                        corner: "south-west" as const,
+                      },
+                      {
+                        x: cropGeometry.x + cropGeometry.width,
+                        y: cropGeometry.y + cropGeometry.height,
+                        corner: "south-east" as const,
+                      },
+                    ].map(({ x, y, corner }) => (
                       <circle
-                        key={index}
+                        key={corner}
                         cx={x}
                         cy={y}
-                        r={Math.max(sourceWidth, sourceHeight) * 0.009}
+                        r={Math.max(sourceWidth, sourceHeight) * 0.0075}
                         className="geometry-handle"
+                        data-crop-corner={corner}
                       />
                     ))}
                   </g>
@@ -1541,11 +1558,9 @@ export default function Home() {
               {(step === "geometry" || step === "review") &&
                 geometryMode === "annulus" && (
                   <g className="annulus-overlay">
-                    <circle
-                      cx={annulusGeometry.cx}
-                      cy={annulusGeometry.cy}
-                      r={annulusGeometry.outerRadius}
-                      className="annulus-fill"
+                    <path
+                      d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}Z M${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}Z`}
+                      fillRule="evenodd"
                     />
                     <circle
                       cx={annulusGeometry.cx}
@@ -1557,14 +1572,57 @@ export default function Home() {
                       cx={annulusGeometry.cx}
                       cy={annulusGeometry.cy}
                       r={annulusGeometry.innerRadius}
-                      className="geometry-line inner"
+                      className="geometry-line"
                     />
                     <circle
-                      cx={annulusGeometry.cx}
+                      cx={annulusGeometry.cx + annulusGeometry.outerRadius}
                       cy={annulusGeometry.cy}
-                      r={Math.max(sourceWidth, sourceHeight) * 0.009}
+                      r={Math.max(sourceWidth, sourceHeight) * 0.0075}
                       className="geometry-handle"
+                      data-annulus-control="outer-radius"
                     />
+                    <circle
+                      cx={annulusGeometry.cx + annulusGeometry.innerRadius}
+                      cy={annulusGeometry.cy}
+                      r={Math.max(sourceWidth, sourceHeight) * 0.0075}
+                      className="geometry-handle"
+                      data-annulus-control="inner-radius"
+                    />
+                    <g
+                      className="annulus-center-control"
+                      data-annulus-control="move"
+                    >
+                      <circle
+                        cx={annulusGeometry.cx}
+                        cy={annulusGeometry.cy}
+                        r={Math.max(sourceWidth, sourceHeight) * 0.014}
+                        className="annulus-center-hit"
+                      />
+                      <line
+                        x1={
+                          annulusGeometry.cx -
+                          Math.max(sourceWidth, sourceHeight) * 0.009
+                        }
+                        y1={annulusGeometry.cy}
+                        x2={
+                          annulusGeometry.cx +
+                          Math.max(sourceWidth, sourceHeight) * 0.009
+                        }
+                        y2={annulusGeometry.cy}
+                      />
+                      <line
+                        x1={annulusGeometry.cx}
+                        y1={
+                          annulusGeometry.cy -
+                          Math.max(sourceWidth, sourceHeight) * 0.009
+                        }
+                        x2={annulusGeometry.cx}
+                        y2={
+                          annulusGeometry.cy +
+                          Math.max(sourceWidth, sourceHeight) * 0.009
+                        }
+                      />
+                    </g>
                   </g>
                 )}
 

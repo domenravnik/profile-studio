@@ -422,29 +422,53 @@ button:disabled {
 .geometry-line {
   fill: transparent;
   stroke: #d79b45;
-  stroke-width: 5;
+  stroke-width: 3;
   stroke-dasharray: 20 12;
   vector-effect: non-scaling-stroke;
-}
-
-.geometry-line.inner {
-  stroke-dasharray: 10 10;
 }
 
 .geometry-handle {
   fill: #fff;
   stroke: #d79b45;
-  stroke-width: 4;
+  stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
 
-.annulus-fill {
-  fill: rgba(215, 155, 69, 0.13);
+.geometry-handle[data-crop-corner="north-west"],
+.geometry-handle[data-crop-corner="south-east"] {
+  cursor: nwse-resize;
+}
+
+.geometry-handle[data-crop-corner="north-east"],
+.geometry-handle[data-crop-corner="south-west"] {
+  cursor: nesw-resize;
+}
+
+.annulus-overlay path {
+  fill: rgba(22, 31, 25, 0.45);
+}
+
+.geometry-handle[data-annulus-control] {
+  cursor: ew-resize;
+}
+
+.annulus-center-control {
+  cursor: move;
+}
+
+.annulus-center-hit {
+  fill: transparent;
+}
+
+.annulus-center-control line {
+  stroke: #d79b45;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
 }
 
 .roi-shape {
   cursor: move;
-  stroke-width: 4;
+  stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
 
@@ -460,14 +484,14 @@ button:disabled {
 }
 
 .roi-shape.selected {
-  stroke-width: 6;
+  stroke-width: 3;
   filter: drop-shadow(0 2px 2px rgba(33, 50, 40, 0.18));
 }
 
 .roi-handle {
   fill: #fff;
   stroke: var(--include);
-  stroke-width: 4;
+  stroke-width: 3;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
@@ -475,7 +499,7 @@ button:disabled {
 .draft-shape {
   fill: none;
   stroke: var(--include);
-  stroke-width: 4;
+  stroke-width: 3;
   stroke-dasharray: 10 8;
   vector-effect: non-scaling-stroke;
 }
@@ -509,7 +533,7 @@ button:disabled {
 .dynamic-min {
   fill: rgba(76, 139, 105, 0.1);
   stroke: var(--include);
-  stroke-width: 4;
+  stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
 
