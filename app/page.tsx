@@ -357,7 +357,7 @@ export default function Home() {
     const context = canvas.getContext("2d");
     if (!context) return;
     renderMask(context, sourceWidth, sourceHeight, shapes);
-  }, [shapes, sourceWidth, sourceHeight, regionMode]);
+  }, [shapes, sourceWidth, sourceHeight, regionMode, step]);
 
   useEffect(() => {
     samplesRef.current = samples;
@@ -480,10 +480,8 @@ export default function Home() {
         point.x - annulusGeometry.cx,
         point.y - annulusGeometry.cy,
       );
-      const insideBand =
-        distance >= annulusGeometry.innerRadius &&
-        distance <= annulusGeometry.outerRadius;
-      if (control || insideBand) {
+      const insideOuterCircle = distance <= annulusGeometry.outerRadius;
+      if (control || insideOuterCircle) {
         event.currentTarget.setPointerCapture(event.pointerId);
         setDragState({
           kind: "annulus",
@@ -502,11 +500,16 @@ export default function Home() {
       const control = controlElement?.dataset.dynamicControl as
         | DynamicEllipseControl
         | undefined;
-      if (control) {
+      const distance = Math.hypot(
+        point.x - dynamicCenter.x,
+        point.y - dynamicCenter.y,
+      );
+      const insideOuterCircle = distance <= dynamicMax / 2;
+      if (control || insideOuterCircle) {
         event.currentTarget.setPointerCapture(event.pointerId);
         setDragState({
           kind: "dynamic-ellipse",
-          control,
+          control: control ?? "move",
           start: point,
           originalCenter: dynamicCenter,
           originalMin: dynamicMin,
@@ -1794,12 +1797,14 @@ export default function Home() {
                       cy={annulusGeometry.cy}
                       r={annulusGeometry.outerRadius}
                       className="geometry-line"
+                      data-annulus-control="move"
                     />
                     <circle
                       cx={annulusGeometry.cx}
                       cy={annulusGeometry.cy}
                       r={annulusGeometry.innerRadius}
                       className="geometry-line"
+                      data-annulus-control="move"
                     />
                     <circle
                       cx={annulusGeometry.cx + annulusGeometry.outerRadius}
@@ -1815,47 +1820,10 @@ export default function Home() {
                       className="geometry-handle"
                       data-annulus-control="inner-radius"
                     />
-                    <g
-                      className="annulus-center-control"
-                      data-annulus-control="move"
-                    >
-                      <circle
-                        cx={annulusGeometry.cx}
-                        cy={annulusGeometry.cy}
-                        r={Math.max(sourceWidth, sourceHeight) * 0.014}
-                        className="annulus-center-hit"
-                      />
-                      <line
-                        x1={
-                          annulusGeometry.cx -
-                          Math.max(sourceWidth, sourceHeight) * 0.009
-                        }
-                        y1={annulusGeometry.cy}
-                        x2={
-                          annulusGeometry.cx +
-                          Math.max(sourceWidth, sourceHeight) * 0.009
-                        }
-                        y2={annulusGeometry.cy}
-                      />
-                      <line
-                        x1={annulusGeometry.cx}
-                        y1={
-                          annulusGeometry.cy -
-                          Math.max(sourceWidth, sourceHeight) * 0.009
-                        }
-                        x2={annulusGeometry.cx}
-                        y2={
-                          annulusGeometry.cy +
-                          Math.max(sourceWidth, sourceHeight) * 0.009
-                        }
-                      />
-                    </g>
                   </g>
                 )}
 
-              {(step === "region" ||
-                step === "model" ||
-                step === "review") &&
+              {(step === "region" || step === "review") &&
                 regionMode === "static" && (
                   <g className="roi-shapes">
                     {shapes.map((shape) => {
@@ -1982,13 +1950,6 @@ export default function Home() {
                           height={tile.height}
                           className={`tile ${tile.included ? "included" : "skipped"}`}
                         />
-                        <text
-                          x={tile.x + tile.width / 2}
-                          y={tile.y + tile.height / 2}
-                          className="tile-label"
-                        >
-                          {tile.id}
-                        </text>
                       </g>
                     ))}
                   </g>
@@ -2002,6 +1963,7 @@ export default function Home() {
                     rx={dynamicMax / 2}
                     ry={dynamicMax / 2}
                     className="dynamic-max"
+                    data-dynamic-control="move"
                   />
                   <ellipse
                     cx={dynamicCenter.x}
@@ -2009,6 +1971,7 @@ export default function Home() {
                     rx={dynamicMin / 2}
                     ry={dynamicMin / 2}
                     className="dynamic-min"
+                    data-dynamic-control="move"
                   />
                   <circle
                     cx={dynamicCenter.x + dynamicMax / 2}
@@ -2024,35 +1987,6 @@ export default function Home() {
                     className="geometry-handle dynamic-handle"
                     data-dynamic-control="minimum"
                   />
-                  <g
-                    className="dynamic-center-control"
-                    data-dynamic-control="move"
-                  >
-                    <circle
-                      cx={dynamicCenter.x}
-                      cy={dynamicCenter.y}
-                      r={Math.max(sourceWidth, sourceHeight) * 0.014}
-                      className="dynamic-center-hit"
-                    />
-                    <line
-                      x1={
-                        dynamicCenter.x -
-                        Math.max(sourceWidth, sourceHeight) * 0.009
-                      }
-                      y1={dynamicCenter.y}
-                      x2={
-                        dynamicCenter.x +
-                        Math.max(sourceWidth, sourceHeight) * 0.009
-                      }
-                      y2={dynamicCenter.y}
-                    />
-                    <line
-                      x1={dynamicCenter.x}
-                      y1={dynamicCenter.y - Math.max(sourceWidth, sourceHeight) * 0.009}
-                      x2={dynamicCenter.x}
-                      y2={dynamicCenter.y + Math.max(sourceWidth, sourceHeight) * 0.009}
-                    />
-                  </g>
                 </g>
               )}
               </svg>
@@ -2300,7 +2234,7 @@ export default function Home() {
               {geometryMode === "annulus" && (
                 <>
                   <div className="field-group">
-                    <label className="field-label">Center · [x, y]</label>
+                    <label className="field-label">Center</label>
                     <div className="field-pair">
                       <NumberField
                         label="X"
@@ -2346,9 +2280,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="field-group">
-                    <label className="field-label">
-                      Unwrapped strip · [height, width]
-                    </label>
+                    <label className="field-label">Unwrapped strip</label>
                     <div className="field-pair">
                       <NumberField
                         label="Height"
@@ -2588,7 +2520,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="field-group">
-                    <label className="field-label">Diameter range · pixels</label>
+                    <label className="field-label">Diameter range</label>
                     <div className="field-pair">
                       <NumberField
                         label="Minimum"
@@ -2648,9 +2580,7 @@ export default function Home() {
           {step === "model" && (
             <div className="settings-content">
               <div className="field-group">
-                <label className="field-label">
-                  Model input · [height, width]
-                </label>
+                <label className="field-label">Model input</label>
                 <div className="field-pair">
                   <NumberField
                     label="Height"
@@ -2682,9 +2612,7 @@ export default function Home() {
               {tilingEnabled && (
                 <>
                   <div className="field-group">
-                    <label className="field-label">
-                      Tile size · [height, width]
-                    </label>
+                    <label className="field-label">Tile size</label>
                     <div className="field-pair">
                       <NumberField
                         label="Height"
@@ -2701,9 +2629,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="field-group">
-                    <label className="field-label">
-                      Stride · [height, width]
-                    </label>
+                    <label className="field-label">Stride</label>
                     <div className="field-pair">
                       <NumberField
                         label="Height"
@@ -2739,9 +2665,7 @@ export default function Home() {
               />
               {artifactEnabled && (
                 <div className="field-group">
-                  <label className="field-label">
-                    Artifact maximum · [width, height]
-                  </label>
+                  <label className="field-label">Artifact maximum</label>
                   <div className="field-pair">
                     <NumberField
                       label="Width"

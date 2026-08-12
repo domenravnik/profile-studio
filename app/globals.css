@@ -452,18 +452,8 @@ button:disabled {
   cursor: ew-resize;
 }
 
-.annulus-center-control {
+.geometry-line[data-annulus-control="move"] {
   cursor: move;
-}
-
-.annulus-center-hit {
-  fill: transparent;
-}
-
-.annulus-center-control line {
-  stroke: #d79b45;
-  stroke-width: 3;
-  vector-effect: non-scaling-stroke;
 }
 
 .roi-shape {
@@ -545,18 +535,9 @@ button:disabled {
   stroke: rgba(75, 84, 78, 0.28);
 }
 
-.tile-label {
-  fill: var(--primary);
-  font-family: var(--font-geist-sans);
-  font-size: 25px;
-  font-weight: 650;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
-}
-
 .dynamic-max,
 .dynamic-min {
+  cursor: move;
   fill: rgba(76, 139, 105, 0.1);
   stroke: var(--include);
   stroke-width: 3;
@@ -566,20 +547,6 @@ button:disabled {
 .dynamic-min {
   fill: transparent;
   stroke-dasharray: 12 9;
-}
-
-.dynamic-center-control {
-  cursor: move;
-}
-
-.dynamic-center-hit {
-  fill: transparent;
-}
-
-.dynamic-center-control line {
-  stroke: var(--include);
-  stroke-width: 3;
-  vector-effect: non-scaling-stroke;
 }
 
 .stage-label {
