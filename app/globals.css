@@ -27,6 +27,7 @@
 
 html {
   background: var(--page);
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -285,7 +286,13 @@ button:disabled {
 }
 
 .settings-card {
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
+}
+
+.settings-content {
+  min-width: 0;
 }
 
 .settings-header h2 {
