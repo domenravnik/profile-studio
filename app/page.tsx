@@ -176,6 +176,34 @@ const clamp = (value: number, min: number, max: number) =>
 const safeInteger = (value: number, fallback = 1) =>
   Number.isFinite(value) ? Math.round(value) : fallback;
 
+const polarPoint = (cx: number, cy: number, radius: number, angle: number) => ({
+  x: cx + radius * Math.cos(angle),
+  y: cy + radius * Math.sin(angle),
+});
+
+const annularSectorPath = (
+  cx: number,
+  cy: number,
+  innerRadius: number,
+  outerRadius: number,
+  startAngle: number,
+  endAngle: number,
+) => {
+  const outerStart = polarPoint(cx, cy, outerRadius, startAngle);
+  const outerEnd = polarPoint(cx, cy, outerRadius, endAngle);
+  const innerEnd = polarPoint(cx, cy, innerRadius, endAngle);
+  const innerStart = polarPoint(cx, cy, innerRadius, startAngle);
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+
+  return [
+    `M${outerStart.x} ${outerStart.y}`,
+    `A${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
+    `L${innerEnd.x} ${innerEnd.y}`,
+    `A${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
+    "Z",
+  ].join(" ");
+};
+
 const slugify = (value: string) => {
   const cleaned = value
     .trim()
@@ -375,6 +403,7 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [processedMask, setProcessedMask] = useState<ProcessedMask | null>(null);
+  const [hoveredTileId, setHoveredTileId] = useState<number | null>(null);
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -407,7 +436,8 @@ export default function Home() {
           : sourceHeight,
     ),
   );
-  const showProcessedPreview = step === "model" || step === "review";
+  const needsProcessedPreview = step === "model" || step === "review";
+  const showProcessedPreview = step === "review";
   const previewWidth = showProcessedPreview ? processedWidth : sourceWidth;
   const previewHeight = showProcessedPreview ? processedHeight : sourceHeight;
 
@@ -435,7 +465,7 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!activeSample || !showProcessedPreview) {
+    if (!activeSample || !needsProcessedPreview) {
       return;
     }
 
@@ -519,7 +549,7 @@ export default function Home() {
     regionMode,
     shapes,
     step,
-    showProcessedPreview,
+    needsProcessedPreview,
   ]);
 
   useEffect(() => {
@@ -2007,22 +2037,121 @@ export default function Home() {
                   </g>
                 )}
 
-              {(step === "model" || step === "review") &&
-                tilingEnabled && (
-                  <g className="tiling-overlay">
-                    {tilingTiles.map((tile) => (
-                      <g key={tile.id}>
+              {step === "model" && geometryMode === "crop" && (
+                <g className="model-geometry-context">
+                  <path
+                    d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${cropGeometry.x} ${cropGeometry.y}H${cropGeometry.x + cropGeometry.width}V${cropGeometry.y + cropGeometry.height}H${cropGeometry.x}Z`}
+                    fillRule="evenodd"
+                  />
+                  <rect
+                    x={cropGeometry.x}
+                    y={cropGeometry.y}
+                    width={cropGeometry.width}
+                    height={cropGeometry.height}
+                    className="model-geometry-line"
+                  />
+                </g>
+              )}
+
+              {step === "model" && geometryMode === "annulus" && (
+                <g className="model-geometry-context">
+                  <path
+                    d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}Z M${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}Z`}
+                    fillRule="evenodd"
+                  />
+                  <circle
+                    cx={annulusGeometry.cx}
+                    cy={annulusGeometry.cy}
+                    r={annulusGeometry.outerRadius}
+                    className="model-geometry-line"
+                  />
+                  <circle
+                    cx={annulusGeometry.cx}
+                    cy={annulusGeometry.cy}
+                    r={annulusGeometry.innerRadius}
+                    className="model-geometry-line"
+                  />
+                  <line
+                    x1={annulusGeometry.cx + annulusGeometry.innerRadius}
+                    y1={annulusGeometry.cy}
+                    x2={annulusGeometry.cx + annulusGeometry.outerRadius}
+                    y2={annulusGeometry.cy}
+                    className="annulus-seam"
+                  />
+                </g>
+              )}
+
+              {(step === "model" || step === "review") && tilingEnabled && (
+                <g className="tiling-overlay">
+                  {tilingTiles.map((tile) => {
+                    const tileClassName = `tile ${tile.included ? "included" : "skipped"} ${hoveredTileId === tile.id ? "highlighted" : ""}`;
+                    const tileEvents = {
+                      onPointerEnter: () => setHoveredTileId(tile.id),
+                      onPointerLeave: () => setHoveredTileId(null),
+                    };
+
+                    if (step === "review" || geometryMode === "full") {
+                      return (
                         <rect
+                          key={tile.id}
                           x={tile.x}
                           y={tile.y}
                           width={tile.width}
                           height={tile.height}
-                          className={`tile ${tile.included ? "included" : "skipped"}`}
+                          className={tileClassName}
+                          {...tileEvents}
                         />
-                      </g>
-                    ))}
-                  </g>
-                )}
+                      );
+                    }
+
+                    if (geometryMode === "crop") {
+                      return (
+                        <rect
+                          key={tile.id}
+                          x={cropGeometry.x + tile.x}
+                          y={cropGeometry.y + tile.y}
+                          width={Math.min(tile.width, processedWidth - tile.x)}
+                          height={Math.min(tile.height, processedHeight - tile.y)}
+                          className={tileClassName}
+                          {...tileEvents}
+                        />
+                      );
+                    }
+
+                    const radialSpan =
+                      annulusGeometry.outerRadius - annulusGeometry.innerRadius;
+                    const innerRadius =
+                      annulusGeometry.innerRadius +
+                      (tile.y / processedHeight) * radialSpan;
+                    const outerRadius =
+                      annulusGeometry.innerRadius +
+                      (Math.min(tile.y + tile.height, processedHeight) /
+                        processedHeight) *
+                        radialSpan;
+                    const startAngle = (tile.x / processedWidth) * Math.PI * 2;
+                    const endAngle =
+                      (Math.min(tile.x + tile.width, processedWidth) /
+                        processedWidth) *
+                      Math.PI * 2;
+
+                    return (
+                      <path
+                        key={tile.id}
+                        d={annularSectorPath(
+                          annulusGeometry.cx,
+                          annulusGeometry.cy,
+                          innerRadius,
+                          outerRadius,
+                          startAngle,
+                          endAngle,
+                        )}
+                        className={tileClassName}
+                        {...tileEvents}
+                      />
+                    );
+                  })}
+                </g>
+              )}
 
               {step === "region" && regionMode === "dynamic" && (
                 <g className="dynamic-ellipse">
@@ -2134,6 +2263,54 @@ export default function Home() {
               </div>
             )}
           </div>
+
+          {step === "model" &&
+            geometryMode === "annulus" &&
+            activeSample && (
+              <div className="annulus-strip-panel">
+                <div className="annulus-strip-heading">
+                  <div>
+                    <strong>Unwrapped model input</strong>
+                    <span>
+                      Exact rectangular tiling · seam at left and right edge
+                    </span>
+                  </div>
+                  <span>
+                    {processedWidth} × {processedHeight}
+                  </span>
+                </div>
+                <div
+                  className="annulus-strip-preview"
+                  style={{ aspectRatio: `${processedWidth} / ${processedHeight}` }}
+                >
+                  <canvas
+                    ref={processedPreviewRef}
+                    className="processed-preview"
+                    aria-label={`Unwrapped annulus preview of ${activeSample.name}`}
+                  />
+                  {tilingEnabled && (
+                    <svg
+                      viewBox={`0 0 ${processedWidth} ${processedHeight}`}
+                      preserveAspectRatio="none"
+                      aria-label="Unwrapped annulus tile grid"
+                    >
+                      {tilingTiles.map((tile) => (
+                        <rect
+                          key={tile.id}
+                          x={tile.x}
+                          y={tile.y}
+                          width={Math.min(tile.width, processedWidth - tile.x)}
+                          height={Math.min(tile.height, processedHeight - tile.y)}
+                          className={`tile ${tile.included ? "included" : "skipped"} ${hoveredTileId === tile.id ? "highlighted" : ""}`}
+                          onPointerEnter={() => setHoveredTileId(tile.id)}
+                          onPointerLeave={() => setHoveredTileId(null)}
+                        />
+                      ))}
+                    </svg>
+                  )}
+                </div>
+              </div>
+            )}
         </section>
 
         <aside className="settings-card">
