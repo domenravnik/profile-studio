@@ -82,6 +82,7 @@ type AnnulusGeometry = {
   stripHeight: number;
   stripWidth: number;
 };
+type ProcessedMask = { width: number; height: number; pixels: Uint8Array };
 
 type DragState =
   | {
@@ -188,36 +189,6 @@ const formatBytes = (bytes: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-const pointInPolygon = (point: Point, polygon: Point[]) => {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const a = polygon[i];
-    const b = polygon[j];
-    const intersects =
-      a.y > point.y !== b.y > point.y &&
-      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y || 1) + a.x;
-    if (intersects) inside = !inside;
-  }
-  return inside;
-};
-
-const pointInShape = (point: Point, shape: RoiShape) => {
-  if (shape.type === "polygon") return pointInPolygon(point, shape.points);
-  const nx = (point.x - shape.cx) / Math.max(1, shape.rx);
-  const ny = (point.y - shape.cy) / Math.max(1, shape.ry);
-  return nx * nx + ny * ny <= 1;
-};
-
-const pointInValidRegion = (point: Point, shapes: RoiShape[]) => {
-  const included = shapes
-    .filter((shape) => shape.operation === "include")
-    .some((shape) => pointInShape(point, shape));
-  if (!included) return false;
-  return !shapes
-    .filter((shape) => shape.operation === "exclude")
-    .some((shape) => pointInShape(point, shape));
-};
-
 const translateShape = (shape: RoiShape, dx: number, dy: number): RoiShape => {
   if (shape.type === "polygon") {
     return {
@@ -279,6 +250,70 @@ const renderMask = (
     });
 };
 
+const drawProcessedRaster = (
+  source: HTMLCanvasElement,
+  target: HTMLCanvasElement,
+  geometryMode: GeometryMode,
+  crop: CropGeometry,
+  annulus: AnnulusGeometry,
+  smoothing: boolean,
+) => {
+  const context = target.getContext("2d");
+  if (!context) return;
+  context.clearRect(0, 0, target.width, target.height);
+  context.imageSmoothingEnabled = smoothing;
+
+  if (geometryMode === "full") {
+    context.drawImage(source, 0, 0);
+    return;
+  }
+  if (geometryMode === "crop") {
+    context.drawImage(
+      source,
+      crop.x,
+      crop.y,
+      crop.width,
+      crop.height,
+      0,
+      0,
+      target.width,
+      target.height,
+    );
+    return;
+  }
+
+  const sourceContext = source.getContext("2d");
+  if (!sourceContext) return;
+  const sourceData = sourceContext.getImageData(0, 0, source.width, source.height);
+  const output = context.createImageData(target.width, target.height);
+  const radialSpan = annulus.outerRadius - annulus.innerRadius;
+  for (let y = 0; y < target.height; y += 1) {
+    const radius =
+      annulus.innerRadius + ((y + 0.5) / target.height) * radialSpan;
+    for (let x = 0; x < target.width; x += 1) {
+      const angle = ((x + 0.5) / target.width) * Math.PI * 2;
+      const sourceX = Math.round(annulus.cx + radius * Math.cos(angle));
+      const sourceY = Math.round(annulus.cy + radius * Math.sin(angle));
+      const outputIndex = (y * target.width + x) * 4;
+      if (
+        sourceX < 0 ||
+        sourceY < 0 ||
+        sourceX >= source.width ||
+        sourceY >= source.height
+      ) {
+        output.data[outputIndex + 3] = 255;
+        continue;
+      }
+      const sourceIndex = (sourceY * source.width + sourceX) * 4;
+      output.data[outputIndex] = sourceData.data[sourceIndex];
+      output.data[outputIndex + 1] = sourceData.data[sourceIndex + 1];
+      output.data[outputIndex + 2] = sourceData.data[sourceIndex + 2];
+      output.data[outputIndex + 3] = sourceData.data[sourceIndex + 3];
+    }
+  }
+  context.putImageData(output, 0, 0);
+};
+
 const canvasToBlob = (canvas: HTMLCanvasElement) =>
   new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -337,17 +372,42 @@ export default function Home() {
   const [artifactHeight, setArtifactHeight] = useState(1024);
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [processedMask, setProcessedMask] = useState<ProcessedMask | null>(null);
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const maskPreviewRef = useRef<HTMLCanvasElement>(null);
+  const processedPreviewRef = useRef<HTMLCanvasElement>(null);
   const samplesRef = useRef<SampleImage[]>([]);
 
   const activeSample =
     samples.find((sample) => sample.id === activeSampleId) ?? samples[0] ?? null;
   const sourceWidth = activeSample?.width ?? DEFAULT_CANVAS_WIDTH;
   const sourceHeight = activeSample?.height ?? DEFAULT_CANVAS_HEIGHT;
+  const processedWidth = Math.max(
+    1,
+    safeInteger(
+      geometryMode === "crop"
+        ? cropGeometry.width
+        : geometryMode === "annulus"
+          ? annulusGeometry.stripWidth
+          : sourceWidth,
+    ),
+  );
+  const processedHeight = Math.max(
+    1,
+    safeInteger(
+      geometryMode === "crop"
+        ? cropGeometry.height
+        : geometryMode === "annulus"
+          ? annulusGeometry.stripHeight
+          : sourceHeight,
+    ),
+  );
+  const showProcessedPreview = step === "model" || step === "review";
+  const previewWidth = showProcessedPreview ? processedWidth : sourceWidth;
+  const previewHeight = showProcessedPreview ? processedHeight : sourceHeight;
 
   useEffect(() => {
     const canvas = maskPreviewRef.current;
@@ -358,6 +418,94 @@ export default function Home() {
     if (!context) return;
     renderMask(context, sourceWidth, sourceHeight, shapes);
   }, [shapes, sourceWidth, sourceHeight, regionMode, step]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeSample) {
+      return;
+    }
+
+    const renderProcessedPreview = async () => {
+      const image = new Image();
+      image.src = activeSample.url;
+      await image.decode();
+      if (cancelled) return;
+
+      const sourceCanvas = document.createElement("canvas");
+      sourceCanvas.width = sourceWidth;
+      sourceCanvas.height = sourceHeight;
+      const sourceContext = sourceCanvas.getContext("2d");
+      if (!sourceContext) return;
+      sourceContext.drawImage(image, 0, 0, sourceWidth, sourceHeight);
+
+      const outputCanvas = document.createElement("canvas");
+      outputCanvas.width = processedWidth;
+      outputCanvas.height = processedHeight;
+      drawProcessedRaster(
+        sourceCanvas,
+        outputCanvas,
+        geometryMode,
+        cropGeometry,
+        annulusGeometry,
+        true,
+      );
+
+      const preview = processedPreviewRef.current;
+      if (preview) {
+        preview.width = processedWidth;
+        preview.height = processedHeight;
+        preview.getContext("2d")?.drawImage(outputCanvas, 0, 0);
+      }
+
+      if (regionMode !== "static") {
+        setProcessedMask(null);
+        return;
+      }
+      const sourceMaskCanvas = document.createElement("canvas");
+      sourceMaskCanvas.width = sourceWidth;
+      sourceMaskCanvas.height = sourceHeight;
+      const sourceMaskContext = sourceMaskCanvas.getContext("2d");
+      if (!sourceMaskContext) return;
+      renderMask(sourceMaskContext, sourceWidth, sourceHeight, shapes);
+
+      const processedMaskCanvas = document.createElement("canvas");
+      processedMaskCanvas.width = processedWidth;
+      processedMaskCanvas.height = processedHeight;
+      drawProcessedRaster(
+        sourceMaskCanvas,
+        processedMaskCanvas,
+        geometryMode,
+        cropGeometry,
+        annulusGeometry,
+        false,
+      );
+      const maskContext = processedMaskCanvas.getContext("2d");
+      if (!maskContext || cancelled) return;
+      const rgba = maskContext.getImageData(0, 0, processedWidth, processedHeight).data;
+      const pixels = new Uint8Array(processedWidth * processedHeight);
+      for (let index = 0; index < pixels.length; index += 1) {
+        pixels[index] = rgba[index * 4] > 0 ? 1 : 0;
+      }
+      setProcessedMask({ width: processedWidth, height: processedHeight, pixels });
+    };
+
+    void renderProcessedPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSample,
+    sourceWidth,
+    sourceHeight,
+    processedWidth,
+    processedHeight,
+    geometryMode,
+    cropGeometry,
+    annulusGeometry,
+    regionMode,
+    shapes,
+    step,
+  ]);
 
   useEffect(() => {
     samplesRef.current = samples;
@@ -1049,25 +1197,6 @@ export default function Home() {
     event.target.value = "";
   };
 
-  const processedRect = useMemo(() => {
-    if (geometryMode === "crop") return cropGeometry;
-    if (geometryMode === "annulus") {
-      return {
-        x: annulusGeometry.cx - annulusGeometry.outerRadius,
-        y: annulusGeometry.cy - annulusGeometry.outerRadius,
-        width: annulusGeometry.outerRadius * 2,
-        height: annulusGeometry.outerRadius * 2,
-      };
-    }
-    return { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
-  }, [
-    geometryMode,
-    cropGeometry,
-    annulusGeometry,
-    sourceWidth,
-    sourceHeight,
-  ]);
-
   const tilingTiles = useMemo(() => {
     if (
       !tilingEnabled ||
@@ -1075,55 +1204,63 @@ export default function Home() {
       tileWidth <= 0 ||
       strideHeight <= 0 ||
       strideWidth <= 0 ||
-      inputHeight <= 0 ||
-      inputWidth <= 0
+      processedHeight <= 0 ||
+      processedWidth <= 0 ||
+      tileHeight > processedHeight ||
+      tileWidth > processedWidth
     ) {
       return [];
     }
 
     const rows = Math.max(
       1,
-      Math.ceil(Math.max(0, inputHeight - tileHeight) / strideHeight) + 1,
+      Math.ceil((processedHeight - tileHeight) / strideHeight) + 1,
     );
     const columns = Math.max(
       1,
-      Math.ceil(Math.max(0, inputWidth - tileWidth) / strideWidth) + 1,
+      Math.ceil((processedWidth - tileWidth) / strideWidth) + 1,
     );
-    const scaleX = processedRect.width / inputWidth;
-    const scaleY = processedRect.height / inputHeight;
+    const integral = new Uint32Array((processedWidth + 1) * (processedHeight + 1));
+    const hasStaticMask =
+      regionMode === "static" &&
+      processedMask?.width === processedWidth &&
+      processedMask.height === processedHeight;
+    if (hasStaticMask && processedMask) {
+      for (let y = 1; y <= processedHeight; y += 1) {
+        let rowSum = 0;
+        for (let x = 1; x <= processedWidth; x += 1) {
+          rowSum += processedMask.pixels[(y - 1) * processedWidth + x - 1];
+          integral[y * (processedWidth + 1) + x] =
+            integral[(y - 1) * (processedWidth + 1) + x] + rowSum;
+        }
+      }
+    }
     const tiles = [];
 
     for (let row = 0; row < rows; row += 1) {
       for (let column = 0; column < columns; column += 1) {
-        const modelX = column * strideWidth;
-        const modelY = row * strideHeight;
-        const x = processedRect.x + modelX * scaleX;
-        const y = processedRect.y + modelY * scaleY;
-        const width = tileWidth * scaleX;
-        const height = tileHeight * scaleY;
-        let valid = 0;
-        const checks = 25;
-        for (let sy = 0; sy < 5; sy += 1) {
-          for (let sx = 0; sx < 5; sx += 1) {
-            const point = {
-              x: x + ((sx + 0.5) / 5) * width,
-              y: y + ((sy + 0.5) / 5) * height,
-            };
-            const isValid =
-              regionMode === "none" ||
-              regionMode === "dynamic" ||
-              pointInValidRegion(point, shapes);
-            if (isValid) valid += 1;
-          }
-        }
+        const x = column * strideWidth;
+        const y = row * strideHeight;
+        const right = Math.min(x + tileWidth, processedWidth);
+        const bottom = Math.min(y + tileHeight, processedHeight);
+        const valid =
+          regionMode !== "static"
+            ? tileWidth * tileHeight
+            : hasStaticMask
+              ? integral[bottom * (processedWidth + 1) + right] -
+                integral[y * (processedWidth + 1) + right] -
+                integral[bottom * (processedWidth + 1) + x] +
+                integral[y * (processedWidth + 1) + x]
+              : 0;
+        const coverage = valid / (tileWidth * tileHeight);
         tiles.push({
           id: row * columns + column + 1,
           x,
           y,
-          width,
-          height,
-          included: valid / checks >= 0.3,
-          coverage: valid / checks,
+          width: tileWidth,
+          height: tileHeight,
+          included: coverage >= 0.3,
+          coverage,
         });
       }
     }
@@ -1134,11 +1271,10 @@ export default function Home() {
     tileWidth,
     strideHeight,
     strideWidth,
-    inputHeight,
-    inputWidth,
-    processedRect,
+    processedHeight,
+    processedWidth,
     regionMode,
-    shapes,
+    processedMask,
   ]);
 
   const validation = useMemo(() => {
@@ -1213,8 +1349,8 @@ export default function Home() {
             tileWidth > 0 &&
             strideHeight > 0 &&
             strideWidth > 0 &&
-            tileHeight <= inputHeight &&
-            tileWidth <= inputWidth &&
+            tileHeight <= processedHeight &&
+            tileWidth <= processedWidth &&
             strideHeight <= tileHeight &&
             strideWidth <= tileWidth &&
             tilingTiles.some((tile) => tile.included))) &&
@@ -1240,6 +1376,8 @@ export default function Home() {
     dynamicMax,
     inputHeight,
     inputWidth,
+    processedHeight,
+    processedWidth,
     tilingEnabled,
     tileHeight,
     tileWidth,
@@ -1608,14 +1746,22 @@ export default function Home() {
         <section className="editor-card">
           <div
             className={`image-stage ${tool !== "select" && step === "region" ? "drawing" : ""}`}
-            style={{ aspectRatio: `${sourceWidth} / ${sourceHeight}` }}
+            style={{ aspectRatio: `${previewWidth} / ${previewHeight}` }}
           >
             {activeSample ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={activeSample.url}
-                alt={`Reference sample ${activeSample.name}`}
-              />
+              showProcessedPreview ? (
+                <canvas
+                  ref={processedPreviewRef}
+                  className="processed-preview"
+                  aria-label={`Processed preview of ${activeSample.name}`}
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={activeSample.url}
+                  alt={`Reference sample ${activeSample.name}`}
+                />
+              )
             ) : (
               <div className="image-empty-state" role="status">
                 <ImageIcon size={42} strokeWidth={1.5} aria-hidden="true" />
@@ -1628,7 +1774,7 @@ export default function Home() {
               <svg
                 ref={svgRef}
                 className="interaction-layer"
-                viewBox={`0 0 ${sourceWidth} ${sourceHeight}`}
+                viewBox={`0 0 ${previewWidth} ${previewHeight}`}
                 preserveAspectRatio="none"
                 onPointerDown={handleCanvasPointerDown}
                 onPointerMove={handleCanvasPointerMove}
@@ -1645,7 +1791,7 @@ export default function Home() {
                   }
                 }}
               >
-              {(step === "geometry" || step === "review") &&
+              {step === "geometry" &&
                 geometryMode === "crop" && (
                   <g className="crop-overlay">
                     <path
@@ -1693,7 +1839,7 @@ export default function Home() {
                   </g>
                 )}
 
-              {(step === "geometry" || step === "review") &&
+              {step === "geometry" &&
                 geometryMode === "annulus" && (
                   <g className="annulus-overlay">
                     <path
@@ -1731,7 +1877,7 @@ export default function Home() {
                   </g>
                 )}
 
-              {(step === "region" || step === "review") &&
+              {step === "region" &&
                 regionMode === "static" && (
                   <g className="roi-shapes">
                     {shapes.map((shape) => {
@@ -1905,7 +2051,8 @@ export default function Home() {
                 <>
                   {activeSample.name}
                   <span>
-                    {sourceWidth} × {sourceHeight}
+                    {previewWidth} × {previewHeight}
+                    {showProcessedPreview ? " processed" : " source"}
                   </span>
                 </>
               ) : (
@@ -2512,7 +2659,9 @@ export default function Home() {
           {step === "model" && (
             <div className="settings-content">
               <div className="field-group">
-                <label className="field-label">Model input</label>
+                <label className="field-label">
+                  {tilingEnabled ? "Per-tile model input" : "Model input"}
+                </label>
                 <div className="field-pair">
                   <NumberField
                     label="Height"
@@ -2526,6 +2675,11 @@ export default function Home() {
                     min={1}
                     onChange={setInputWidth}
                   />
+                </div>
+                <div className="field-hint">
+                  {tilingEnabled
+                    ? "Every native tile is resized to this size before PatchCore."
+                    : "The complete processed image is resized to this size."}
                 </div>
               </div>
 
@@ -2544,7 +2698,7 @@ export default function Home() {
               {tilingEnabled && (
                 <>
                   <div className="field-group">
-                    <label className="field-label">Tile size</label>
+                    <label className="field-label">Native tile coverage</label>
                     <div className="field-pair">
                       <NumberField
                         label="Height"
@@ -2558,6 +2712,9 @@ export default function Home() {
                         min={1}
                         onChange={setTileWidth}
                       />
+                    </div>
+                    <div className="field-hint">
+                      Pixels in the {processedWidth} × {processedHeight} processed image.
                     </div>
                   </div>
                   <div className="field-group">

@@ -10,7 +10,7 @@ settings into a detector-compatible JSON profile and optional binary mask.
 - Configure full-image, crop, or annulus preprocessing.
 - Draw include/exclude polygons and ellipses for a static valid-region mask.
 - Configure dynamic ellipse localization.
-- Preview input sizing and ROI-aware tiling with the 30% inclusion threshold.
+- Preview native post-geometry tiling and exact static-ROI coverage with the 30% inclusion threshold.
 - Import an existing profile JSON.
 - Validate settings and export a portable ZIP with the profile, mask, preview,
   editable project data, and placement instructions.
@@ -50,3 +50,7 @@ The mask is an 8-bit source-resolution PNG containing only black and white
 pixels. Static polygon and ellipse drawings both export as a mask valid region.
 The profile's `ellipse` valid-region type remains reserved for per-image dynamic
 ellipse detection.
+
+When tiling is enabled, `tile_size` and `stride` are measured in the native
+processed image (full image, crop, or unwrapped annulus). Every included tile is
+then resized independently to `input_size` for PatchCore.

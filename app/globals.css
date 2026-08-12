@@ -359,6 +359,7 @@ button:disabled {
 }
 
 .image-stage > img,
+.image-stage > canvas.processed-preview,
 .image-empty-state,
 .interaction-layer {
   position: absolute;
@@ -368,6 +369,10 @@ button:disabled {
 }
 
 .image-stage > img {
+  object-fit: contain;
+}
+
+.image-stage > canvas.processed-preview {
   object-fit: contain;
 }
 
