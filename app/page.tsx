@@ -1529,52 +1529,6 @@ export default function Home() {
   const activeTiles = tilingTiles.filter((tile) => tile.included);
   const stepNumber = STEPS.findIndex((item) => item.id === step) + 1;
 
-  const canvasCopy: Record<
-    Step,
-    { eyebrow: string; title: string; meta: string }
-  > = {
-    samples: {
-      eyebrow: "REFERENCE IMAGES",
-      title: "Check the profile across representative samples",
-      meta: "All images in one profile must share source dimensions and alignment.",
-    },
-    geometry: {
-      eyebrow: `GEOMETRY · ${geometryMode.toUpperCase()}`,
-      title:
-        geometryMode === "crop"
-          ? "Position the crop around the inspected part"
-          : geometryMode === "annulus"
-            ? "Align the inner and outer annulus boundaries"
-            : "Use the complete source image",
-      meta: "Drag the active geometry or enter exact source-image coordinates.",
-    },
-    region: {
-      eyebrow:
-        regionMode === "static"
-          ? "VALID REGION · STATIC MASK"
-          : regionMode === "dynamic"
-            ? "VALID REGION · DYNAMIC ELLIPSE"
-            : "VALID REGION · FULL AREA",
-      title:
-        regionMode === "static"
-          ? "Draw the area the model should inspect"
-          : regionMode === "dynamic"
-            ? "Set the acceptable detected ellipse diameter"
-            : "The entire processed image will be inspected",
-      meta: `Coordinates are stored in the original ${sourceWidth} × ${sourceHeight} image space.`,
-    },
-    model: {
-      eyebrow: "MODEL INPUT · TILING",
-      title: "Preview how the model divides the valid region",
-      meta: "Tiles with at least 30% valid pixels are included.",
-    },
-    review: {
-      eyebrow: "REVIEW",
-      title: "Verify the effective training profile",
-      meta: "The JSON and mask below are the files included in the export bundle.",
-    },
-  };
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1652,52 +1606,6 @@ export default function Home() {
 
       <div className="workspace">
         <section className="editor-card">
-          <div className="editor-header">
-            <div>
-              <div className="eyebrow">{canvasCopy[step].eyebrow}</div>
-              <h1>{canvasCopy[step].title}</h1>
-              <p>{canvasCopy[step].meta}</p>
-            </div>
-            {step === "region" && regionMode === "static" && (
-              <div className="drawing-toolbar" aria-label="Drawing tools">
-                {[
-                  {
-                    id: "select" as const,
-                    label: "Select",
-                    icon: MousePointer2,
-                  },
-                  {
-                    id: "polygon" as const,
-                    label: "Polygon",
-                    icon: Hexagon,
-                  },
-                  {
-                    id: "ellipse" as const,
-                    label: "Ellipse",
-                    icon: Circle,
-                  },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      className={`tool-button ${tool === item.id ? "active" : ""}`}
-                      type="button"
-                      key={item.id}
-                      onClick={() => {
-                        if (draftPolygon.length >= 3 && item.id !== "polygon")
-                          finishPolygon();
-                        setTool(item.id);
-                      }}
-                    >
-                      <Icon size={16} />
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           <div
             className={`image-stage ${tool !== "select" && step === "region" ? "drawing" : ""}`}
             style={{ aspectRatio: `${sourceWidth} / ${sourceHeight}` }}
@@ -2004,12 +1912,52 @@ export default function Home() {
                 "No image"
               )}
             </div>
-          </div>
 
-          <div className="editor-footer">
-            <div className="sample-switcher">
-              {samples.length ? (
-                samples.map((sample, index) => (
+            {step === "region" && regionMode === "static" && (
+              <div className="drawing-toolbar stage-tools" aria-label="Drawing tools">
+                {[
+                  {
+                    id: "select" as const,
+                    label: "Select",
+                    icon: MousePointer2,
+                  },
+                  {
+                    id: "polygon" as const,
+                    label: "Polygon",
+                    icon: Hexagon,
+                  },
+                  {
+                    id: "ellipse" as const,
+                    label: "Ellipse",
+                    icon: Circle,
+                  },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      className={`tool-button ${tool === item.id ? "active" : ""}`}
+                      type="button"
+                      key={item.id}
+                      onClick={() => {
+                        if (draftPolygon.length >= 3 && item.id !== "polygon")
+                          finishPolygon();
+                        setTool(item.id);
+                      }}
+                    >
+                      <Icon size={16} />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {samples.length > 0 && (
+              <div
+                className="sample-switcher stage-samples"
+                aria-label="Reference samples"
+              >
+                {samples.map((sample, index) => (
                   <button
                     key={sample.id}
                     type="button"
@@ -2020,25 +1968,9 @@ export default function Home() {
                   >
                     {String(index + 1).padStart(2, "0")}
                   </button>
-                ))
-              ) : (
-                <ImageIcon size={16} aria-hidden="true" />
-              )}
-              <span>
-                {samples.length
-                  ? `${samples.length} aligned sample${samples.length === 1 ? "" : "s"}`
-                  : "No reference images"}
-              </span>
-            </div>
-            <div className="canvas-status">
-              {step === "model"
-                ? `${activeTiles.length} included · ${Math.max(0, tilingTiles.length - activeTiles.length)} skipped`
-                : step === "region" && regionMode === "static"
-                  ? `${shapes.length} shape${shapes.length === 1 ? "" : "s"} · source-space mask`
-                  : step === "geometry" && geometryMode === "crop"
-                    ? `${cropGeometry.width} × ${cropGeometry.height} crop`
-                    : `${validation.filter((check) => check.ok).length} of ${validation.length} checks passed`}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
