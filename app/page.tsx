@@ -84,6 +84,8 @@ type AnnulusGeometry = {
 };
 type ProcessedMask = { width: number; height: number; pixels: Uint8Array };
 
+const MASK_PREVIEW_MAX_DIMENSION = 640;
+
 type DragState =
   | {
       kind: "shape";
@@ -412,16 +414,28 @@ export default function Home() {
   useEffect(() => {
     const canvas = maskPreviewRef.current;
     if (!canvas) return;
-    canvas.width = sourceWidth;
-    canvas.height = sourceHeight;
+    const previewScale = Math.min(
+      1,
+      MASK_PREVIEW_MAX_DIMENSION / Math.max(sourceWidth, sourceHeight),
+    );
+    canvas.width = Math.max(1, Math.round(sourceWidth * previewScale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * previewScale));
     const context = canvas.getContext("2d");
     if (!context) return;
+    context.setTransform(
+      canvas.width / sourceWidth,
+      0,
+      0,
+      canvas.height / sourceHeight,
+      0,
+      0,
+    );
     renderMask(context, sourceWidth, sourceHeight, shapes);
   }, [shapes, sourceWidth, sourceHeight, regionMode, step]);
 
   useEffect(() => {
     let cancelled = false;
-    if (!activeSample) {
+    if (!activeSample || !showProcessedPreview) {
       return;
     }
 
@@ -505,6 +519,7 @@ export default function Home() {
     regionMode,
     shapes,
     step,
+    showProcessedPreview,
   ]);
 
   useEffect(() => {
