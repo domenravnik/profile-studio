@@ -2578,7 +2578,7 @@ export default function Home() {
                     setRegionMode(event.target.value as RegionMode)
                   }
                 >
-                  <option value="none">No valid region</option>
+                  <option value="none">Entire image</option>
                   <option value="static">Static mask — draw shapes</option>
                   <option value="dynamic">
                     Dynamic ellipse — detect per image
@@ -2819,9 +2819,7 @@ export default function Home() {
           {step === "model" && (
             <div className="settings-content">
               <div className="field-group">
-                <label className="field-label">
-                  {tilingEnabled ? "Per-tile model input" : "Model input"}
-                </label>
+                <label className="field-label">Model input</label>
                 <div className="field-pair">
                   <NumberField
                     label="Height"
@@ -2838,7 +2836,7 @@ export default function Home() {
                 </div>
                 <div className="field-hint">
                   {tilingEnabled
-                    ? "Every native tile is resized to this size before PatchCore."
+                    ? "Every native tile is resized to this size."
                     : "The complete processed image is resized to this size."}
                 </div>
               </div>
