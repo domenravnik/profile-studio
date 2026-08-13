@@ -1802,6 +1802,120 @@ export default function Home() {
                   }
                 }}
               >
+              {(step === "model" || step === "review") &&
+                regionMode === "static" &&
+                !tilingEnabled && (
+                  <defs>
+                    <g id="valid-region-includes">
+                      {shapes
+                        .filter((shape) => shape.operation === "include")
+                        .map((shape) =>
+                          shape.type === "polygon" ? (
+                            <polygon
+                              key={shape.id}
+                              points={shape.points
+                                .map((point) => `${point.x},${point.y}`)
+                                .join(" ")}
+                            />
+                          ) : (
+                            <ellipse
+                              key={shape.id}
+                              cx={shape.cx}
+                              cy={shape.cy}
+                              rx={shape.rx}
+                              ry={shape.ry}
+                            />
+                          ),
+                        )}
+                    </g>
+                    <g id="valid-region-excludes">
+                      {shapes
+                        .filter((shape) => shape.operation === "exclude")
+                        .map((shape) =>
+                          shape.type === "polygon" ? (
+                            <polygon
+                              key={shape.id}
+                              points={shape.points
+                                .map((point) => `${point.x},${point.y}`)
+                                .join(" ")}
+                            />
+                          ) : (
+                            <ellipse
+                              key={shape.id}
+                              cx={shape.cx}
+                              cy={shape.cy}
+                              rx={shape.rx}
+                              ry={shape.ry}
+                            />
+                          ),
+                        )}
+                    </g>
+                    <g id="valid-region-geometry">
+                      {geometryMode === "full" && (
+                        <rect x={0} y={0} width={sourceWidth} height={sourceHeight} />
+                      )}
+                      {geometryMode === "crop" && (
+                        <rect
+                          x={cropGeometry.x}
+                          y={cropGeometry.y}
+                          width={cropGeometry.width}
+                          height={cropGeometry.height}
+                        />
+                      )}
+                      {geometryMode === "annulus" && (
+                        <path
+                          d={`M${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}Z M${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}Z`}
+                          fillRule="evenodd"
+                        />
+                      )}
+                    </g>
+                    <mask
+                      id="final-valid-region-mask"
+                      x={0}
+                      y={0}
+                      width={sourceWidth}
+                      height={sourceHeight}
+                      maskUnits="userSpaceOnUse"
+                      maskContentUnits="userSpaceOnUse"
+                    >
+                      <rect
+                        x={0}
+                        y={0}
+                        width={sourceWidth}
+                        height={sourceHeight}
+                        fill="#000"
+                      />
+                      <use href="#valid-region-includes" fill="#fff" />
+                      <use href="#valid-region-excludes" fill="#000" />
+                    </mask>
+                    <mask
+                      id="inverse-valid-region-mask"
+                      x={0}
+                      y={0}
+                      width={sourceWidth}
+                      height={sourceHeight}
+                      maskUnits="userSpaceOnUse"
+                      maskContentUnits="userSpaceOnUse"
+                    >
+                      <rect x={0} y={0} width={sourceWidth} height={sourceHeight} fill="#fff" />
+                      <use href="#valid-region-includes" fill="#000" />
+                      <use href="#valid-region-excludes" fill="#fff" />
+                    </mask>
+                    <mask
+                      id="valid-region-geometry-mask"
+                      x={0}
+                      y={0}
+                      width={sourceWidth}
+                      height={sourceHeight}
+                      maskUnits="userSpaceOnUse"
+                      maskContentUnits="userSpaceOnUse"
+                    >
+                      <rect x={0} y={0} width={sourceWidth} height={sourceHeight} fill="#000" />
+                      <use href="#valid-region-geometry" fill="#fff" />
+                    </mask>
+                  </defs>
+                )}
+
               {step === "geometry" &&
                 geometryMode === "crop" && (
                   <g className="crop-overlay">
@@ -2046,6 +2160,94 @@ export default function Home() {
                       y2={annulusGeometry.cy}
                       className="annulus-seam"
                     />
+                  </g>
+                )}
+
+              {(step === "model" || step === "review") &&
+                regionMode === "static" &&
+                !tilingEnabled && (
+                  <g className="final-valid-region">
+                    <g mask="url(#final-valid-region-mask)">
+                      <use
+                        href="#valid-region-geometry"
+                        className="final-valid-region-fill"
+                      />
+                    </g>
+                    <g mask="url(#valid-region-geometry-mask)">
+                      <g mask="url(#inverse-valid-region-mask)">
+                        {shapes
+                          .filter((shape) => shape.operation === "include")
+                          .map((shape) =>
+                            shape.type === "polygon" ? (
+                              <polygon
+                                key={shape.id}
+                                points={shape.points
+                                  .map((point) => `${point.x},${point.y}`)
+                                  .join(" ")}
+                                className="final-valid-region-boundary"
+                              />
+                            ) : (
+                              <ellipse
+                                key={shape.id}
+                                cx={shape.cx}
+                                cy={shape.cy}
+                                rx={shape.rx}
+                                ry={shape.ry}
+                                className="final-valid-region-boundary"
+                              />
+                            ),
+                          )}
+                      </g>
+                      <g mask="url(#final-valid-region-mask)">
+                        {shapes
+                          .filter((shape) => shape.operation === "exclude")
+                          .map((shape) =>
+                            shape.type === "polygon" ? (
+                              <polygon
+                                key={shape.id}
+                                points={shape.points
+                                  .map((point) => `${point.x},${point.y}`)
+                                  .join(" ")}
+                                className="final-valid-region-boundary"
+                              />
+                            ) : (
+                              <ellipse
+                                key={shape.id}
+                                cx={shape.cx}
+                                cy={shape.cy}
+                                rx={shape.rx}
+                                ry={shape.ry}
+                                className="final-valid-region-boundary"
+                              />
+                            ),
+                          )}
+                        {geometryMode === "full" && (
+                          <rect
+                            x={0}
+                            y={0}
+                            width={sourceWidth}
+                            height={sourceHeight}
+                            className="final-valid-region-boundary"
+                          />
+                        )}
+                        {geometryMode === "crop" && (
+                          <rect
+                            x={cropGeometry.x}
+                            y={cropGeometry.y}
+                            width={cropGeometry.width}
+                            height={cropGeometry.height}
+                            className="final-valid-region-boundary"
+                          />
+                        )}
+                        {geometryMode === "annulus" && (
+                          <path
+                            d={`M${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}Z M${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}Z`}
+                            fillRule="evenodd"
+                            className="final-valid-region-boundary"
+                          />
+                        )}
+                      </g>
+                    </g>
                   </g>
                 )}
 

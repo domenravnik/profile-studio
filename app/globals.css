@@ -540,6 +540,22 @@ button:disabled {
   vector-effect: non-scaling-stroke;
 }
 
+.final-valid-region {
+  pointer-events: none;
+}
+
+.final-valid-region-fill {
+  fill: rgba(76, 139, 105, 0.16);
+}
+
+.final-valid-region-boundary {
+  fill: none;
+  stroke: rgba(76, 139, 105, 0.9);
+  /* The region masks retain one half of the centered stroke. */
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+}
+
 .tiling-overlay .tile {
   pointer-events: auto;
   transition:
