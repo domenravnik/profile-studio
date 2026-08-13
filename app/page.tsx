@@ -437,9 +437,8 @@ export default function Home() {
     ),
   );
   const needsProcessedPreview = step === "model" || step === "review";
-  const showProcessedPreview = step === "review";
-  const previewWidth = showProcessedPreview ? processedWidth : sourceWidth;
-  const previewHeight = showProcessedPreview ? processedHeight : sourceHeight;
+  const previewWidth = sourceWidth;
+  const previewHeight = sourceHeight;
 
   useEffect(() => {
     const canvas = maskPreviewRef.current;
@@ -1683,31 +1682,6 @@ export default function Home() {
     }
   };
 
-  const resetDraft = () => {
-    setProfileName("luks_mini_pos1");
-    setGeometryMode("crop");
-    setCropGeometry({ x: 549, y: 198, width: 768, height: 768 });
-    setRegionMode("none");
-    setOperation("include");
-    setShapes(initialShapes);
-    setMaskName("luks_mini_pos1_roi.png");
-    setSelectedShapeId(null);
-    setDynamicCenter({
-      x: DEFAULT_CANVAS_WIDTH / 2,
-      y: DEFAULT_CANVAS_HEIGHT / 2,
-    });
-    setInputHeight(256);
-    setInputWidth(256);
-    setTilingEnabled(true);
-    setTileHeight(128);
-    setTileWidth(128);
-    setStrideHeight(64);
-    setStrideWidth(64);
-    setArtifactEnabled(true);
-    setStep("region");
-    setNotice("Draft reset to the example profile.");
-  };
-
   const selectedShape = shapes.find((shape) => shape.id === selectedShapeId);
   const activeTiles = tilingTiles.filter((tile) => tile.included);
   const stepNumber = STEPS.findIndex((item) => item.id === step) + 1;
@@ -1794,19 +1768,11 @@ export default function Home() {
             style={{ aspectRatio: `${previewWidth} / ${previewHeight}` }}
           >
             {activeSample ? (
-              showProcessedPreview ? (
-                <canvas
-                  ref={processedPreviewRef}
-                  className="processed-preview"
-                  aria-label={`Processed preview of ${activeSample.name}`}
-                />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={activeSample.url}
-                  alt={`Reference sample ${activeSample.name}`}
-                />
-              )
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={activeSample.url}
+                alt={`Reference sample ${activeSample.name}`}
+              />
             ) : (
               <div className="image-empty-state" role="status">
                 <ImageIcon size={42} strokeWidth={1.5} aria-hidden="true" />
@@ -2037,49 +2003,51 @@ export default function Home() {
                   </g>
                 )}
 
-              {step === "model" && geometryMode === "crop" && (
-                <g className="model-geometry-context">
-                  <path
-                    d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${cropGeometry.x} ${cropGeometry.y}H${cropGeometry.x + cropGeometry.width}V${cropGeometry.y + cropGeometry.height}H${cropGeometry.x}Z`}
-                    fillRule="evenodd"
-                  />
-                  <rect
-                    x={cropGeometry.x}
-                    y={cropGeometry.y}
-                    width={cropGeometry.width}
-                    height={cropGeometry.height}
-                    className="model-geometry-line"
-                  />
-                </g>
-              )}
+              {(step === "region" || step === "model" || step === "review") &&
+                geometryMode === "crop" && (
+                  <g className="fixed-geometry-context">
+                    <path
+                      d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${cropGeometry.x} ${cropGeometry.y}H${cropGeometry.x + cropGeometry.width}V${cropGeometry.y + cropGeometry.height}H${cropGeometry.x}Z`}
+                      fillRule="evenodd"
+                    />
+                    <rect
+                      x={cropGeometry.x}
+                      y={cropGeometry.y}
+                      width={cropGeometry.width}
+                      height={cropGeometry.height}
+                      className="fixed-geometry-line"
+                    />
+                  </g>
+                )}
 
-              {step === "model" && geometryMode === "annulus" && (
-                <g className="model-geometry-context">
-                  <path
-                    d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}Z M${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}Z`}
-                    fillRule="evenodd"
-                  />
-                  <circle
-                    cx={annulusGeometry.cx}
-                    cy={annulusGeometry.cy}
-                    r={annulusGeometry.outerRadius}
-                    className="model-geometry-line"
-                  />
-                  <circle
-                    cx={annulusGeometry.cx}
-                    cy={annulusGeometry.cy}
-                    r={annulusGeometry.innerRadius}
-                    className="model-geometry-line"
-                  />
-                  <line
-                    x1={annulusGeometry.cx + annulusGeometry.innerRadius}
-                    y1={annulusGeometry.cy}
-                    x2={annulusGeometry.cx + annulusGeometry.outerRadius}
-                    y2={annulusGeometry.cy}
-                    className="annulus-seam"
-                  />
-                </g>
-              )}
+              {(step === "region" || step === "model" || step === "review") &&
+                geometryMode === "annulus" && (
+                  <g className="fixed-geometry-context">
+                    <path
+                      d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}Z M${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}Z`}
+                      fillRule="evenodd"
+                    />
+                    <circle
+                      cx={annulusGeometry.cx}
+                      cy={annulusGeometry.cy}
+                      r={annulusGeometry.outerRadius}
+                      className="fixed-geometry-line"
+                    />
+                    <circle
+                      cx={annulusGeometry.cx}
+                      cy={annulusGeometry.cy}
+                      r={annulusGeometry.innerRadius}
+                      className="fixed-geometry-line"
+                    />
+                    <line
+                      x1={annulusGeometry.cx + annulusGeometry.innerRadius}
+                      y1={annulusGeometry.cy}
+                      x2={annulusGeometry.cx + annulusGeometry.outerRadius}
+                      y2={annulusGeometry.cy}
+                      className="annulus-seam"
+                    />
+                  </g>
+                )}
 
               {(step === "model" || step === "review") && tilingEnabled && (
                 <g className="tiling-overlay">
@@ -2090,7 +2058,7 @@ export default function Home() {
                       onPointerLeave: () => setHoveredTileId(null),
                     };
 
-                    if (step === "review" || geometryMode === "full") {
+                    if (geometryMode === "full") {
                       return (
                         <rect
                           key={tile.id}
@@ -2196,7 +2164,7 @@ export default function Home() {
                   {activeSample.name}
                   <span>
                     {previewWidth} × {previewHeight}
-                    {showProcessedPreview ? " processed" : " source"}
+                    {" source"}
                   </span>
                 </>
               ) : (
@@ -2264,7 +2232,7 @@ export default function Home() {
             )}
           </div>
 
-          {step === "model" &&
+          {(step === "model" || step === "review") &&
             geometryMode === "annulus" &&
             activeSample && (
               <div className="annulus-strip-panel">
@@ -2999,16 +2967,8 @@ export default function Home() {
                   id="profile-name"
                   type="text"
                   value={profileName}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setProfileName(value);
-                    if (
-                      !maskName ||
-                      maskName === `${slugify(profileName)}_roi.png`
-                    ) {
-                      setMaskName(`${slugify(value)}_roi.png`);
-                    }
-                  }}
+                  readOnly
+                  aria-readonly="true"
                 />
                 <div className="field-hint">
                   Exported as profiles/{slugify(profileName)}.json
@@ -3040,7 +3000,7 @@ export default function Home() {
               <div className="section-block">
                 <div className="section-heading">
                   <div className="section-label">PROFILE JSON</div>
-                  <span className="derived-badge">Live</span>
+                  <span className="derived-badge">Read only</span>
                 </div>
                 <pre className="json-preview">
                   {JSON.stringify(profile, null, 2)}
@@ -3088,13 +3048,6 @@ export default function Home() {
                 )}
               </button>
 
-              <button
-                className="text-button"
-                type="button"
-                onClick={resetDraft}
-              >
-                Reset example draft
-              </button>
             </div>
           )}
         </aside>

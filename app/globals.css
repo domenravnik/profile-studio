@@ -524,26 +524,20 @@ button:disabled {
   stroke: rgba(75, 84, 78, 0.28);
 }
 
-.model-geometry-context {
+.fixed-geometry-context {
   pointer-events: none;
 }
 
-.model-geometry-context path {
+.fixed-geometry-context path {
   fill: rgba(22, 31, 25, 0.34);
 }
 
-.model-geometry-line,
+.fixed-geometry-line,
 .annulus-seam {
   fill: transparent;
-  stroke: rgba(255, 255, 255, 0.92);
+  stroke: #9f6d2f;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
-}
-
-.annulus-seam {
-  stroke: #d79b45;
-  stroke-width: 3;
-  stroke-dasharray: 7 5;
 }
 
 .tiling-overlay .tile {
