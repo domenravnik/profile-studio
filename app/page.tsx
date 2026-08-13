@@ -242,6 +242,59 @@ const clamp = (value: number, min: number, max: number) =>
 const safeInteger = (value: number, fallback = 1) =>
   Number.isFinite(value) ? Math.round(value) : fallback;
 
+const roundToMultiple = (value: number, multiple: number) =>
+  Math.max(multiple, Math.round(value / multiple) * multiple);
+
+const recommendedAnnulusStrip = (innerRadius: number, outerRadius: number) => ({
+  stripHeight: Math.max(1, Math.round(outerRadius - innerRadius)),
+  stripWidth: roundToMultiple(Math.PI * (innerRadius + outerRadius), 16),
+});
+
+const recommendedTiling = (
+  width: number,
+  height: number,
+  mode: GeometryMode,
+) => {
+  const practicalEdge = (edge: number, target: number) => {
+    const bounded = Math.min(edge, target);
+    return bounded < 32
+      ? Math.max(1, Math.round(bounded))
+      : Math.max(16, Math.floor(bounded / 16) * 16);
+  };
+  const tileHeight =
+    mode === "annulus"
+      ? Math.max(1, Math.round(height))
+      : practicalEdge(height, 512);
+  const tileWidth =
+    mode === "annulus"
+      ? practicalEdge(width, Math.max(256, height * 4))
+      : practicalEdge(width, 512);
+
+  return {
+    tileHeight,
+    tileWidth,
+    strideHeight: Math.max(1, Math.round(tileHeight / 2)),
+    strideWidth: Math.max(1, Math.round(tileWidth / 2)),
+  };
+};
+
+const recommendedDynamicRange = (width: number, height: number) => {
+  const shortEdge = Math.max(2, Math.min(width, height));
+  const minimum = Math.max(1, Math.round(shortEdge * 0.6));
+  return {
+    minimum,
+    maximum: Math.max(minimum + 1, Math.round(shortEdge * 0.85)),
+  };
+};
+
+const recommendedAnnulusInput = (width: number, height: number) => {
+  const scale = Math.min(1, 1024 / Math.max(width, height));
+  return {
+    height: Math.max(1, Math.round(height * scale)),
+    width: Math.max(1, Math.round(width * scale)),
+  };
+};
+
 const parseNumberPair = (value: unknown, label: string): [number, number] => {
   if (
     !Array.isArray(value) ||
@@ -594,6 +647,11 @@ export default function Home() {
   const processedMaskPreviewRef = useRef<HTMLCanvasElement>(null);
   const samplesRef = useRef<SampleImage[]>([]);
   const polygonDraftRef = useRef<PolygonDraftHandle>(null);
+  const stripCustomizedRef = useRef(false);
+  const tilingCustomizedRef = useRef(false);
+  const dynamicCustomizedRef = useRef(false);
+  const modelInputCustomizedRef = useRef(false);
+  const artifactCustomizedRef = useRef(false);
 
   const activeSample =
     samples.find((sample) => sample.id === activeSampleId) ?? samples[0] ?? null;
@@ -626,6 +684,77 @@ export default function Home() {
     dragState?.kind === "ellipse-radius";
   const previewWidth = sourceWidth;
   const previewHeight = sourceHeight;
+
+  const applyRecommendedTiling = (
+    width = processedWidth,
+    height = processedHeight,
+    mode = geometryMode,
+  ) => {
+    const recommendation = recommendedTiling(width, height, mode);
+    setTileHeight(recommendation.tileHeight);
+    setTileWidth(recommendation.tileWidth);
+    setStrideHeight(recommendation.strideHeight);
+    setStrideWidth(recommendation.strideWidth);
+  };
+
+  const handleGeometryModeChange = (mode: GeometryMode) => {
+    setGeometryMode(mode);
+    const width =
+      mode === "crop"
+        ? cropGeometry.width
+        : mode === "annulus"
+          ? annulusGeometry.stripWidth
+          : sourceWidth;
+    const height =
+      mode === "crop"
+        ? cropGeometry.height
+        : mode === "annulus"
+          ? annulusGeometry.stripHeight
+          : sourceHeight;
+
+    if (!dynamicCustomizedRef.current) {
+      const recommendation = recommendedDynamicRange(width, height);
+      setDynamicMin(recommendation.minimum);
+      setDynamicMax(recommendation.maximum);
+    }
+    if (tilingEnabled && !tilingCustomizedRef.current) {
+      applyRecommendedTiling(width, height, mode);
+    }
+    if (mode === "annulus" && !modelInputCustomizedRef.current) {
+      const recommendation = recommendedAnnulusInput(width, height);
+      setInputHeight(recommendation.height);
+      setInputWidth(recommendation.width);
+    }
+  };
+
+  const handleTilingChange = (enabled: boolean) => {
+    if (enabled && !tilingCustomizedRef.current) applyRecommendedTiling();
+    setTilingEnabled(enabled);
+  };
+
+  useEffect(() => {
+    if (!dynamicCustomizedRef.current) {
+      const recommendation = recommendedDynamicRange(processedWidth, processedHeight);
+      setDynamicMin(recommendation.minimum);
+      setDynamicMax(recommendation.maximum);
+    }
+    if (tilingEnabled && !tilingCustomizedRef.current) {
+      const recommendation = recommendedTiling(
+        processedWidth,
+        processedHeight,
+        geometryMode,
+      );
+      setTileHeight(recommendation.tileHeight);
+      setTileWidth(recommendation.tileWidth);
+      setStrideHeight(recommendation.strideHeight);
+      setStrideWidth(recommendation.strideWidth);
+    }
+    if (geometryMode === "annulus" && !modelInputCustomizedRef.current) {
+      const recommendation = recommendedAnnulusInput(processedWidth, processedHeight);
+      setInputHeight(recommendation.height);
+      setInputWidth(recommendation.width);
+    }
+  }, [geometryMode, processedHeight, processedWidth, tilingEnabled]);
 
   useEffect(() => {
     // Keep the SVG editing overlay responsive. The small mask preview catches
@@ -1007,6 +1136,7 @@ export default function Home() {
       );
       const insideOuterCircle = distance <= dynamicMax / 2;
       if (control || insideOuterCircle) {
+        dynamicCustomizedRef.current = true;
         event.currentTarget.setPointerCapture(event.pointerId);
         setDragState({
           kind: "dynamic-ellipse",
@@ -1129,11 +1259,15 @@ export default function Home() {
         );
 
         if (dragState.control === "inner-radius") {
+          const innerRadius = safeInteger(
+            clamp(radius, 1, dragState.original.outerRadius - 1),
+          );
           setAnnulusGeometry({
             ...dragState.original,
-            innerRadius: safeInteger(
-              clamp(radius, 1, dragState.original.outerRadius - 1),
-            ),
+            innerRadius,
+            ...(stripCustomizedRef.current
+              ? {}
+              : recommendedAnnulusStrip(innerRadius, dragState.original.outerRadius)),
           });
           return;
         }
@@ -1144,11 +1278,15 @@ export default function Home() {
           dragState.original.cy,
           sourceHeight - dragState.original.cy,
         );
+        const outerRadius = safeInteger(
+          clamp(radius, dragState.original.innerRadius + 1, maximumRadius),
+        );
         setAnnulusGeometry({
           ...dragState.original,
-          outerRadius: safeInteger(
-            clamp(radius, dragState.original.innerRadius + 1, maximumRadius),
-          ),
+          outerRadius,
+          ...(stripCustomizedRef.current
+            ? {}
+            : recommendedAnnulusStrip(dragState.original.innerRadius, outerRadius)),
         });
         return;
       }
@@ -1449,17 +1587,30 @@ export default function Home() {
         height: cropHeight,
       });
       const outerRadius = Math.round(Math.min(first.width, first.height) * 0.36);
+      const innerRadius = Math.round(outerRadius * 0.62);
+      const strip = recommendedAnnulusStrip(innerRadius, outerRadius);
       setAnnulusGeometry((value) => ({
         ...value,
         cx: Math.round(first.width / 2),
         cy: Math.round(first.height / 2),
-        innerRadius: Math.round(outerRadius * 0.62),
+        innerRadius,
         outerRadius,
+        ...strip,
       }));
+      const dynamicRange = recommendedDynamicRange(cropWidth, cropHeight);
+      setDynamicMin(dynamicRange.minimum);
+      setDynamicMax(dynamicRange.maximum);
       setDynamicCenter({
         x: Math.round(first.width / 2),
         y: Math.round(first.height / 2),
       });
+      if (tilingEnabled && !tilingCustomizedRef.current) {
+        applyRecommendedTiling(cropWidth, cropHeight, "crop");
+      }
+      if (!artifactCustomizedRef.current) {
+        setArtifactWidth(Math.min(1024, first.width));
+        setArtifactHeight(Math.min(1024, first.height));
+      }
       setShapes([]);
       setUndoStack([]);
       setRedoStack([]);
@@ -1484,6 +1635,9 @@ export default function Home() {
         throw new Error("name must be a string.");
       }
       const importedInputSize = parseNumberPair(data.input_size, "input_size");
+      modelInputCustomizedRef.current = true;
+      stripCustomizedRef.current = false;
+      dynamicCustomizedRef.current = false;
       setProfileName(data.name);
       setInputHeight(importedInputSize[0]);
       setInputWidth(importedInputSize[1]);
@@ -1516,6 +1670,7 @@ export default function Home() {
           stripHeight: stripSize[0],
           stripWidth: stripSize[1],
         });
+        stripCustomizedRef.current = true;
       } else if (firstStepObject) {
         throw new Error(`Unsupported first preprocessing step: ${String(firstStepObject.name)}.`);
       } else {
@@ -1527,6 +1682,7 @@ export default function Home() {
         : parseObject(data.valid_region, "valid_region");
       if (!validRegion) setRegionMode("none");
       else if (validRegion.type === "ellipse") {
+        dynamicCustomizedRef.current = true;
         setRegionMode("dynamic");
         const range = parseNumberPair(validRegion.diameter_range, "valid_region.diameter_range");
         setDynamicMin(range[0]);
@@ -1546,6 +1702,7 @@ export default function Home() {
       }
 
       const tiling = data.tiling === undefined ? undefined : parseObject(data.tiling, "tiling");
+      tilingCustomizedRef.current = Boolean(tiling);
       setTilingEnabled(Boolean(tiling));
       if (tiling) {
         const tileSize = parseNumberPair(tiling.tile_size, "tiling.tile_size");
@@ -1560,6 +1717,7 @@ export default function Home() {
         ? undefined
         : parseObject(data.artifact_size, "artifact_size");
       setArtifactEnabled(Boolean(artifact));
+      artifactCustomizedRef.current = Boolean(artifact);
       if (artifact) {
         if (artifact.max_width === undefined && artifact.max_height === undefined) {
           throw new Error("artifact_size must define max_width or max_height.");
@@ -3101,7 +3259,7 @@ export default function Home() {
                         className={
                           geometryMode === item.id ? "active" : undefined
                         }
-                        onClick={() => setGeometryMode(item.id)}
+                        onClick={() => handleGeometryModeChange(item.id)}
                       >
                         <Icon size={15} />
                         {item.label}
@@ -3216,10 +3374,12 @@ export default function Home() {
                         min={1}
                         invalid={Boolean(geometryIssue)}
                         onChange={(innerRadius) =>
-                          setAnnulusGeometry((value) => ({
-                            ...value,
-                            innerRadius,
-                          }))
+                          setAnnulusGeometry((value) => {
+                            const next = { ...value, innerRadius };
+                            return stripCustomizedRef.current
+                              ? next
+                              : { ...next, ...recommendedAnnulusStrip(innerRadius, value.outerRadius) };
+                          })
                         }
                       />
                       <NumberField
@@ -3228,10 +3388,12 @@ export default function Home() {
                         min={2}
                         invalid={Boolean(geometryIssue)}
                         onChange={(outerRadius) =>
-                          setAnnulusGeometry((value) => ({
-                            ...value,
-                            outerRadius,
-                          }))
+                          setAnnulusGeometry((value) => {
+                            const next = { ...value, outerRadius };
+                            return stripCustomizedRef.current
+                              ? next
+                              : { ...next, ...recommendedAnnulusStrip(value.innerRadius, outerRadius) };
+                          })
                         }
                       />
                     </div>
@@ -3244,24 +3406,20 @@ export default function Home() {
                         value={annulusGeometry.stripHeight}
                         min={1}
                         invalid={Boolean(geometryIssue)}
-                        onChange={(stripHeight) =>
-                          setAnnulusGeometry((value) => ({
-                            ...value,
-                            stripHeight,
-                          }))
-                        }
+                        onChange={(stripHeight) => {
+                          stripCustomizedRef.current = true;
+                          setAnnulusGeometry((value) => ({ ...value, stripHeight }));
+                        }}
                       />
                       <NumberField
                         label="Width"
                         value={annulusGeometry.stripWidth}
                         min={1}
                         invalid={Boolean(geometryIssue)}
-                        onChange={(stripWidth) =>
-                          setAnnulusGeometry((value) => ({
-                            ...value,
-                            stripWidth,
-                          }))
-                        }
+                        onChange={(stripWidth) => {
+                          stripCustomizedRef.current = true;
+                          setAnnulusGeometry((value) => ({ ...value, stripWidth }));
+                        }}
                       />
                     </div>
                   </div>
@@ -3297,9 +3455,15 @@ export default function Home() {
                 <select
                   id="region-mode"
                   value={regionMode}
-                  onChange={(event) =>
-                    setRegionMode(event.target.value as RegionMode)
-                  }
+                  onChange={(event) => {
+                    const mode = event.target.value as RegionMode;
+                    if (mode === "dynamic" && !dynamicCustomizedRef.current) {
+                      const recommendation = recommendedDynamicRange(processedWidth, processedHeight);
+                      setDynamicMin(recommendation.minimum);
+                      setDynamicMax(recommendation.maximum);
+                    }
+                    setRegionMode(mode);
+                  }}
                 >
                   <option value="none">Entire image</option>
                   <option value="static">Static mask — draw shapes</option>
@@ -3494,14 +3658,20 @@ export default function Home() {
                         value={dynamicMin}
                         min={1}
                         invalid={Boolean(regionIssue)}
-                        onChange={setDynamicMin}
+                        onChange={(value) => {
+                          dynamicCustomizedRef.current = true;
+                          setDynamicMin(value);
+                        }}
                       />
                       <NumberField
                         label="Maximum"
                         value={dynamicMax}
                         min={2}
                         invalid={Boolean(regionIssue)}
-                        onChange={setDynamicMax}
+                        onChange={(value) => {
+                          dynamicCustomizedRef.current = true;
+                          setDynamicMax(value);
+                        }}
                       />
                     </div>
                     {regionIssue && <FieldMessage message={regionIssue} />}
@@ -3557,14 +3727,20 @@ export default function Home() {
                     value={inputHeight}
                     min={1}
                     invalid={Boolean(modelInputIssue)}
-                    onChange={setInputHeight}
+                    onChange={(value) => {
+                      modelInputCustomizedRef.current = true;
+                      setInputHeight(value);
+                    }}
                   />
                   <NumberField
                     label="Width"
                     value={inputWidth}
                     min={1}
                     invalid={Boolean(modelInputIssue)}
-                    onChange={setInputWidth}
+                    onChange={(value) => {
+                      modelInputCustomizedRef.current = true;
+                      setInputWidth(value);
+                    }}
                   />
                 </div>
                 <div className="field-hint">
@@ -3577,7 +3753,7 @@ export default function Home() {
 
               <ToggleRow
                 checked={tilingEnabled}
-                onChange={setTilingEnabled}
+                onChange={handleTilingChange}
                 icon={<Grid3X3 size={16} />}
                 title="Enable tiling"
                 detail={
@@ -3597,14 +3773,20 @@ export default function Home() {
                         value={tileHeight}
                         min={1}
                         invalid={Boolean(tileIssue)}
-                        onChange={setTileHeight}
+                        onChange={(value) => {
+                          tilingCustomizedRef.current = true;
+                          setTileHeight(value);
+                        }}
                       />
                       <NumberField
                         label="Width"
                         value={tileWidth}
                         min={1}
                         invalid={Boolean(tileIssue)}
-                        onChange={setTileWidth}
+                        onChange={(value) => {
+                          tilingCustomizedRef.current = true;
+                          setTileWidth(value);
+                        }}
                       />
                     </div>
                     <div className="field-hint">
@@ -3620,14 +3802,20 @@ export default function Home() {
                         value={strideHeight}
                         min={1}
                         invalid={Boolean(strideIssue)}
-                        onChange={setStrideHeight}
+                        onChange={(value) => {
+                          tilingCustomizedRef.current = true;
+                          setStrideHeight(value);
+                        }}
                       />
                       <NumberField
                         label="Width"
                         value={strideWidth}
                         min={1}
                         invalid={Boolean(strideIssue)}
-                        onChange={setStrideWidth}
+                        onChange={(value) => {
+                          tilingCustomizedRef.current = true;
+                          setStrideWidth(value);
+                        }}
                       />
                     </div>
                     {strideIssue && <FieldMessage message={strideIssue} />}
@@ -3663,14 +3851,20 @@ export default function Home() {
                       value={artifactWidth}
                       min={1}
                       invalid={Boolean(artifactIssue)}
-                      onChange={setArtifactWidth}
+                      onChange={(value) => {
+                        artifactCustomizedRef.current = true;
+                        setArtifactWidth(value);
+                      }}
                     />
                     <NumberField
                       label="Height"
                       value={artifactHeight}
                       min={1}
                       invalid={Boolean(artifactIssue)}
-                      onChange={setArtifactHeight}
+                      onChange={(value) => {
+                        artifactCustomizedRef.current = true;
+                        setArtifactHeight(value);
+                      }}
                     />
                   </div>
                   {artifactIssue && <FieldMessage message={artifactIssue} />}
