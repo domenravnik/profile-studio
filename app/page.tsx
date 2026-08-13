@@ -413,7 +413,7 @@ const canvasToBlob = (canvas: HTMLCanvasElement) =>
 
 export default function Home() {
   const [step, setStep] = useState<Step>("samples");
-  const [profileName, setProfileName] = useState("luks_mini_pos1");
+  const [profileName, setProfileName] = useState("new_profile");
   const [samples, setSamples] = useState<SampleImage[]>([]);
   const [activeSampleId, setActiveSampleId] = useState<string | null>(null);
   const [geometryMode, setGeometryMode] = useState<GeometryMode>("crop");
@@ -442,7 +442,7 @@ export default function Home() {
   const [ellipseStart, setEllipseStart] = useState<Point | null>(null);
   const [ellipseCurrent, setEllipseCurrent] = useState<Point | null>(null);
   const [dragState, setDragState] = useState<DragState>(null);
-  const [maskName, setMaskName] = useState("luks_mini_pos1_roi.png");
+  const [maskName, setMaskName] = useState("roi.png");
   const [dynamicMin, setDynamicMin] = useState(400);
   const [dynamicMax, setDynamicMax] = useState(510);
   const [dynamicCenter, setDynamicCenter] = useState<Point>({
@@ -1786,9 +1786,7 @@ export default function Home() {
           </div>
           <div>
             <div className="brand-name">Profile Studio</div>
-            <div className="draft-status">
-              {slugify(profileName)} <span>·</span> Draft saved locally
-            </div>
+            <div className="draft-status">{slugify(profileName)}</div>
           </div>
         </div>
         <div className="topbar-actions">
@@ -2093,6 +2091,50 @@ export default function Home() {
                   </g>
                 )}
 
+              {step === "region" && geometryMode === "crop" && (
+                <g className="fixed-geometry-context">
+                  <path
+                    d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${cropGeometry.x} ${cropGeometry.y}H${cropGeometry.x + cropGeometry.width}V${cropGeometry.y + cropGeometry.height}H${cropGeometry.x}Z`}
+                    fillRule="evenodd"
+                  />
+                  <rect
+                    x={cropGeometry.x}
+                    y={cropGeometry.y}
+                    width={cropGeometry.width}
+                    height={cropGeometry.height}
+                    className="fixed-geometry-line"
+                  />
+                </g>
+              )}
+
+              {step === "region" && geometryMode === "annulus" && (
+                <g className="fixed-geometry-context">
+                  <path
+                    d={`M0 0H${sourceWidth}V${sourceHeight}H0Z M${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.outerRadius} ${annulusGeometry.cy}A${annulusGeometry.outerRadius} ${annulusGeometry.outerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.outerRadius} ${annulusGeometry.cy}Z M${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx - annulusGeometry.innerRadius} ${annulusGeometry.cy}A${annulusGeometry.innerRadius} ${annulusGeometry.innerRadius} 0 1 0 ${annulusGeometry.cx + annulusGeometry.innerRadius} ${annulusGeometry.cy}Z`}
+                    fillRule="evenodd"
+                  />
+                  <circle
+                    cx={annulusGeometry.cx}
+                    cy={annulusGeometry.cy}
+                    r={annulusGeometry.outerRadius}
+                    className="fixed-geometry-line"
+                  />
+                  <circle
+                    cx={annulusGeometry.cx}
+                    cy={annulusGeometry.cy}
+                    r={annulusGeometry.innerRadius}
+                    className="fixed-geometry-line"
+                  />
+                  <line
+                    x1={annulusGeometry.cx + annulusGeometry.innerRadius}
+                    y1={annulusGeometry.cy}
+                    x2={annulusGeometry.cx + annulusGeometry.outerRadius}
+                    y2={annulusGeometry.cy}
+                    className="annulus-seam"
+                  />
+                </g>
+              )}
+
               {step === "region" &&
                 regionMode === "static" && (
                   <g className="roi-shapes">
@@ -2116,21 +2158,6 @@ export default function Home() {
                                 startShapeDrag(event, shape)
                               }
                             />
-                            {selectedShapeId === shape.id &&
-                              shape.points.map((point, index) => (
-                                <circle
-                                  key={index}
-                                  cx={point.x}
-                                  cy={point.y}
-                                  r={
-                                    Math.max(sourceWidth, sourceHeight) * 0.007
-                                  }
-                                  className={`roi-handle ${shape.operation}`}
-                                  onPointerDown={(event) =>
-                                    startPolygonPointDrag(event, shape, index)
-                                  }
-                                />
-                              ))}
                           </g>
                         );
                       }
@@ -2146,35 +2173,54 @@ export default function Home() {
                               startShapeDrag(event, shape)
                             }
                           />
-                          {selectedShapeId === shape.id && (
-                            <>
-                              <circle
-                                cx={shape.cx + shape.rx}
-                                cy={shape.cy}
-                                r={Math.max(sourceWidth, sourceHeight) * 0.007}
-                                className={`roi-handle horizontal ${shape.operation}`}
-                                onPointerDown={(event) =>
-                                  startEllipseRadiusDrag(
-                                    event,
-                                    shape,
-                                    "horizontal",
-                                  )
-                                }
-                              />
-                              <circle
-                                cx={shape.cx}
-                                cy={shape.cy + shape.ry}
-                                r={Math.max(sourceWidth, sourceHeight) * 0.007}
-                                className={`roi-handle vertical ${shape.operation}`}
-                                onPointerDown={(event) =>
-                                  startEllipseRadiusDrag(event, shape, "vertical")
-                                }
-                              />
-                            </>
-                          )}
                         </g>
                       );
                     })}
+
+                    {selectedShape?.type === "polygon" &&
+                      selectedShape.points.map((point, index) => (
+                        <circle
+                          key={index}
+                          cx={point.x}
+                          cy={point.y}
+                          r={Math.max(sourceWidth, sourceHeight) * 0.007}
+                          className={`roi-handle ${selectedShape.operation}`}
+                          onPointerDown={(event) =>
+                            startPolygonPointDrag(event, selectedShape, index)
+                          }
+                        />
+                      ))}
+
+                    {selectedShape?.type === "ellipse" && (
+                      <>
+                        <circle
+                          cx={selectedShape.cx + selectedShape.rx}
+                          cy={selectedShape.cy}
+                          r={Math.max(sourceWidth, sourceHeight) * 0.007}
+                          className={`roi-handle horizontal ${selectedShape.operation}`}
+                          onPointerDown={(event) =>
+                            startEllipseRadiusDrag(
+                              event,
+                              selectedShape,
+                              "horizontal",
+                            )
+                          }
+                        />
+                        <circle
+                          cx={selectedShape.cx}
+                          cy={selectedShape.cy + selectedShape.ry}
+                          r={Math.max(sourceWidth, sourceHeight) * 0.007}
+                          className={`roi-handle vertical ${selectedShape.operation}`}
+                          onPointerDown={(event) =>
+                            startEllipseRadiusDrag(
+                              event,
+                              selectedShape,
+                              "vertical",
+                            )
+                          }
+                        />
+                      </>
+                    )}
 
                     {draftPolygon.length > 0 && (
                       <g>
@@ -2208,7 +2254,7 @@ export default function Home() {
                   </g>
                 )}
 
-              {(step === "region" || step === "model" || step === "review") &&
+              {(step === "model" || step === "review") &&
                 geometryMode === "crop" && (
                   <g className="fixed-geometry-context">
                     <path
@@ -2225,7 +2271,7 @@ export default function Home() {
                   </g>
                 )}
 
-              {(step === "region" || step === "model" || step === "review") &&
+              {(step === "model" || step === "review") &&
                 geometryMode === "annulus" && (
                   <g className="fixed-geometry-context">
                     <path
@@ -3258,8 +3304,7 @@ export default function Home() {
                   id="profile-name"
                   type="text"
                   value={profileName}
-                  readOnly
-                  aria-readonly="true"
+                  onChange={(event) => setProfileName(event.target.value)}
                 />
                 <div className="field-hint">
                   Exported as profiles/{slugify(profileName)}.json

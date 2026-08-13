@@ -536,7 +536,7 @@ button:disabled {
 .annulus-seam {
   fill: transparent;
   stroke: #9f6d2f;
-  stroke-width: 2;
+  stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
 
@@ -552,7 +552,7 @@ button:disabled {
   fill: none;
   stroke: rgba(76, 139, 105, 0.9);
   /* The region masks retain one half of the centered stroke. */
-  stroke-width: 4;
+  stroke-width: 6;
   vector-effect: non-scaling-stroke;
 }
 
