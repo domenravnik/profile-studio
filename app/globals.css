@@ -563,9 +563,15 @@ button:disabled {
     stroke 100ms ease;
 }
 
-.tile.highlighted {
-  fill: rgba(215, 155, 69, 0.34);
-  stroke: #f7c879;
+.tile.included.highlighted {
+  fill: rgba(76, 139, 105, 0.34);
+  stroke: #4c8b69;
+  stroke-width: 4;
+}
+
+.tile.skipped.highlighted {
+  fill: rgba(75, 84, 78, 0.2);
+  stroke: #6f7872;
   stroke-width: 4;
 }
 

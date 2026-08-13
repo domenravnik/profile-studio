@@ -1339,13 +1339,19 @@ export default function Home() {
       return [];
     }
 
-    const rows = Math.max(
-      1,
-      Math.ceil((processedHeight - tileHeight) / strideHeight) + 1,
+    const rows = Math.min(
+      Math.max(
+        1,
+        Math.ceil((processedHeight - tileHeight) / strideHeight) + 1,
+      ),
+      Math.ceil(processedHeight / strideHeight),
     );
-    const columns = Math.max(
-      1,
-      Math.ceil((processedWidth - tileWidth) / strideWidth) + 1,
+    const columns = Math.min(
+      Math.max(
+        1,
+        Math.ceil((processedWidth - tileWidth) / strideWidth) + 1,
+      ),
+      Math.ceil(processedWidth / strideWidth),
     );
     const integral = new Uint32Array((processedWidth + 1) * (processedHeight + 1));
     const hasStaticMask =
