@@ -83,6 +83,7 @@ type AnnulusGeometry = {
   stripWidth: number;
 };
 type ProcessedMask = { width: number; height: number; pixels: Uint8Array };
+type ValidationCheck = { ok: boolean; label: string; step: Step };
 
 const MASK_PREVIEW_MAX_DIMENSION = 640;
 
@@ -175,6 +176,31 @@ const clamp = (value: number, min: number, max: number) =>
 
 const safeInteger = (value: number, fallback = 1) =>
   Number.isFinite(value) ? Math.round(value) : fallback;
+
+const parseNumberPair = (value: unknown, label: string): [number, number] => {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 2 ||
+    !value.every((item) => typeof item === "number" && Number.isFinite(item))
+  ) {
+    throw new Error(`${label} must contain exactly two numbers.`);
+  }
+  return [value[0] as number, value[1] as number];
+};
+
+const parseObject = (value: unknown, label: string): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+};
+
+const parseNumber = (value: unknown, label: string): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a number.`);
+  }
+  return value;
+};
 
 const polarPoint = (cx: number, cy: number, radius: number, angle: number) => ({
   x: cx + radius * Math.cos(angle),
@@ -462,6 +488,7 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [processedMask, setProcessedMask] = useState<ProcessedMask | null>(null);
+  const [staticMaskHasPixels, setStaticMaskHasPixels] = useState<boolean | null>(null);
   const [hoveredTileId, setHoveredTileId] = useState<number | null>(null);
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -524,8 +551,24 @@ export default function Home() {
       cropGeometry,
       annulusGeometry,
     );
+    let maskHasPixels: boolean | null = null;
+    if (regionMode === "static") {
+      const rgba = sourceContext.getImageData(0, 0, sourceWidth, sourceHeight).data;
+      maskHasPixels = false;
+      for (let index = 0; index < rgba.length; index += 4) {
+        if (rgba[index] > 0) {
+          maskHasPixels = true;
+          break;
+        }
+      }
+    }
     context.imageSmoothingEnabled = false;
     context.drawImage(sourceMask, 0, 0, canvas.width, canvas.height);
+    const maskStateTimer = window.setTimeout(
+      () => setStaticMaskHasPixels(maskHasPixels),
+      0,
+    );
+    return () => window.clearTimeout(maskStateTimer);
   }, [
     shapes,
     sourceWidth,
@@ -1165,29 +1208,36 @@ export default function Home() {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
 
-    const loaded = await Promise.all(
-      files.map(
-        (file) =>
-          new Promise<SampleImage>((resolve, reject) => {
-            const url = URL.createObjectURL(file);
-            const image = new Image();
-            image.onload = () =>
-              resolve({
-                id: crypto.randomUUID(),
-                name: file.name,
-                url,
-                width: image.naturalWidth,
-                height: image.naturalHeight,
-                bytes: file.size,
-              });
-            image.onerror = () => {
-              URL.revokeObjectURL(url);
-              reject(new Error(`Could not read ${file.name}`));
-            };
-            image.src = url;
-          }),
-      ),
-    );
+    let loaded: SampleImage[];
+    try {
+      loaded = await Promise.all(
+        files.map(
+          (file) =>
+            new Promise<SampleImage>((resolve, reject) => {
+              const url = URL.createObjectURL(file);
+              const image = new Image();
+              image.onload = () =>
+                resolve({
+                  id: crypto.randomUUID(),
+                  name: file.name,
+                  url,
+                  width: image.naturalWidth,
+                  height: image.naturalHeight,
+                  bytes: file.size,
+                });
+              image.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error(`Could not read ${file.name}. Choose a supported, valid image.`));
+              };
+              image.src = url;
+            }),
+        ),
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not read the selected images.");
+      event.target.value = "";
+      return;
+    }
 
     const first = loaded[0];
     const expected = samples[0] ?? first;
@@ -1242,84 +1292,120 @@ export default function Home() {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
-      const data = JSON.parse(await file.text()) as Record<string, unknown>;
-      if (typeof data.name === "string") setProfileName(data.name);
-      if (
-        Array.isArray(data.input_size) &&
-        data.input_size.length === 2
-      ) {
-        setInputHeight(Number(data.input_size[0]));
-        setInputWidth(Number(data.input_size[1]));
+      const parsed = JSON.parse(await file.text()) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Profile JSON must contain an object at the top level.");
       }
+      const data = parsed as Record<string, unknown>;
+      if (typeof data.name !== "string") {
+        throw new Error("name must be a string.");
+      }
+      const importedInputSize = parseNumberPair(data.input_size, "input_size");
+      setProfileName(data.name);
+      setInputHeight(importedInputSize[0]);
+      setInputWidth(importedInputSize[1]);
 
-      const preprocess = Array.isArray(data.preprocess_steps)
-        ? (data.preprocess_steps as Array<Record<string, unknown>>)
-        : [];
+      if (data.preprocess_steps !== undefined && !Array.isArray(data.preprocess_steps)) {
+        throw new Error("preprocess_steps must be an array.");
+      }
+      const preprocess = (data.preprocess_steps ?? []) as unknown[];
       const firstStep = preprocess[0];
-      if (firstStep?.name === "crop") {
-        const params = firstStep.params as Record<string, unknown>;
+      const firstStepObject = firstStep === undefined ? undefined : parseObject(firstStep, "preprocess_steps[0]");
+      if (firstStepObject?.name === "crop") {
+        const params = parseObject(firstStepObject.params, "crop params");
         setGeometryMode("crop");
         setCropGeometry({
-          x: Number(params.x),
-          y: Number(params.y),
-          width: Number(params.width),
-          height: Number(params.height),
+          x: parseNumber(params.x, "crop x"),
+          y: parseNumber(params.y, "crop y"),
+          width: parseNumber(params.width, "crop width"),
+          height: parseNumber(params.height, "crop height"),
         });
-      } else if (firstStep?.name === "annulus_unwrap") {
-        const params = firstStep.params as Record<string, unknown>;
-        const center = params.center as number[];
-        const stripSize = params.strip_size as number[];
+      } else if (firstStepObject?.name === "annulus_unwrap") {
+        const params = parseObject(firstStepObject.params, "annulus_unwrap params");
+        const center = parseNumberPair(params.center, "annulus center");
+        const stripSize = parseNumberPair(params.strip_size, "annulus strip_size");
         setGeometryMode("annulus");
         setAnnulusGeometry({
-          cx: Number(center?.[0]),
-          cy: Number(center?.[1]),
-          innerRadius: Number(params.inner_radius),
-          outerRadius: Number(params.outer_radius),
-          stripHeight: Number(stripSize?.[0]),
-          stripWidth: Number(stripSize?.[1]),
+          cx: center[0],
+          cy: center[1],
+          innerRadius: parseNumber(params.inner_radius, "annulus inner_radius"),
+          outerRadius: parseNumber(params.outer_radius, "annulus outer_radius"),
+          stripHeight: stripSize[0],
+          stripWidth: stripSize[1],
         });
+      } else if (firstStepObject) {
+        throw new Error(`Unsupported first preprocessing step: ${String(firstStepObject.name)}.`);
       } else {
         setGeometryMode("full");
       }
 
-      const validRegion = data.valid_region as
-        | Record<string, unknown>
-        | undefined;
+      const validRegion = data.valid_region === undefined
+        ? undefined
+        : parseObject(data.valid_region, "valid_region");
       if (!validRegion) setRegionMode("none");
       else if (validRegion.type === "ellipse") {
         setRegionMode("dynamic");
-        const range = validRegion.diameter_range as number[];
-        setDynamicMin(Number(range?.[0]));
-        setDynamicMax(Number(range?.[1]));
-      } else {
+        const range = parseNumberPair(validRegion.diameter_range, "valid_region.diameter_range");
+        setDynamicMin(range[0]);
+        setDynamicMax(range[1]);
+      } else if (validRegion.type === "mask") {
+        if (typeof validRegion.path !== "string" || !validRegion.path.trim()) {
+          throw new Error("valid_region.path must be a non-empty string.");
+        }
         setRegionMode("static");
-        if (typeof validRegion.path === "string")
-          setMaskName(validRegion.path);
+        setShapes([]);
+        setUndoStack([]);
+        setRedoStack([]);
+        setSelectedShapeId(null);
+        setMaskName(validRegion.path);
+      } else {
+        throw new Error("valid_region.type must be mask or ellipse.");
       }
 
-      const tiling = data.tiling as Record<string, unknown> | undefined;
+      const tiling = data.tiling === undefined ? undefined : parseObject(data.tiling, "tiling");
       setTilingEnabled(Boolean(tiling));
       if (tiling) {
-        const tileSize = tiling.tile_size as number[];
-        const stride = tiling.stride as number[];
-        setTileHeight(Number(tileSize?.[0]));
-        setTileWidth(Number(tileSize?.[1]));
-        setStrideHeight(Number(stride?.[0]));
-        setStrideWidth(Number(stride?.[1]));
+        const tileSize = parseNumberPair(tiling.tile_size, "tiling.tile_size");
+        const stride = parseNumberPair(tiling.stride, "tiling.stride");
+        setTileHeight(tileSize[0]);
+        setTileWidth(tileSize[1]);
+        setStrideHeight(stride[0]);
+        setStrideWidth(stride[1]);
       }
 
-      const artifact = data.artifact_size as
-        | Record<string, unknown>
-        | undefined;
+      const artifact = data.artifact_size === undefined
+        ? undefined
+        : parseObject(data.artifact_size, "artifact_size");
       setArtifactEnabled(Boolean(artifact));
       if (artifact) {
-        setArtifactWidth(Number(artifact.max_width ?? 1024));
-        setArtifactHeight(Number(artifact.max_height ?? 1024));
+        if (artifact.max_width === undefined && artifact.max_height === undefined) {
+          throw new Error("artifact_size must define max_width or max_height.");
+        }
+        setArtifactWidth(
+          artifact.max_width === undefined
+            ? 1024
+            : parseNumber(artifact.max_width, "artifact_size.max_width"),
+        );
+        setArtifactHeight(
+          artifact.max_height === undefined
+            ? 1024
+            : parseNumber(artifact.max_height, "artifact_size.max_height"),
+        );
       }
-      setNotice(`Imported ${file.name}.`);
+      setNotice(
+        validRegion?.type === "mask"
+          ? `Imported ${file.name}. Static mask drawings are not stored in profile JSON; redraw the inspection area before exporting.`
+          : `Imported ${file.name}.`,
+      );
       setStep("review");
-    } catch {
-      setNotice("That file is not a valid profile JSON.");
+    } catch (error) {
+      setNotice(
+        error instanceof SyntaxError
+          ? "That file contains malformed JSON."
+          : error instanceof Error
+            ? `Could not import profile: ${error.message}`
+            : "That file is not a valid profile JSON.",
+      );
     }
     event.target.value = "";
   };
@@ -1410,117 +1496,216 @@ export default function Home() {
     processedMask,
   ]);
 
+  const geometryIssue = useMemo(() => {
+    if (geometryMode === "full") return null;
+    if (geometryMode === "crop") {
+      if (![cropGeometry.x, cropGeometry.y, cropGeometry.width, cropGeometry.height].every(Number.isInteger)) {
+        return "Crop values must be whole pixels.";
+      }
+      if (cropGeometry.x < 0) return "Crop X must be zero or greater.";
+      if (cropGeometry.y < 0) return "Crop Y must be zero or greater.";
+      if (cropGeometry.width <= 0) return "Crop width must be greater than zero.";
+      if (cropGeometry.height <= 0) return "Crop height must be greater than zero.";
+      if (cropGeometry.x + cropGeometry.width > sourceWidth) {
+        return `Crop exceeds the source width by ${cropGeometry.x + cropGeometry.width - sourceWidth} px.`;
+      }
+      if (cropGeometry.y + cropGeometry.height > sourceHeight) {
+        return `Crop exceeds the source height by ${cropGeometry.y + cropGeometry.height - sourceHeight} px.`;
+      }
+      return null;
+    }
+    if (![
+      annulusGeometry.cx,
+      annulusGeometry.cy,
+      annulusGeometry.innerRadius,
+      annulusGeometry.outerRadius,
+      annulusGeometry.stripHeight,
+      annulusGeometry.stripWidth,
+    ].every(Number.isInteger)) return "Annulus values must be whole pixels.";
+    if (annulusGeometry.innerRadius <= 0) return "Inner radius must be greater than zero.";
+    if (annulusGeometry.outerRadius <= annulusGeometry.innerRadius) {
+      return "Outer radius must be greater than inner radius.";
+    }
+    if (
+      annulusGeometry.cx - annulusGeometry.outerRadius < 0 ||
+      annulusGeometry.cx + annulusGeometry.outerRadius > sourceWidth
+    ) {
+      return "The outer circle must fit within the source width.";
+    }
+    if (
+      annulusGeometry.cy - annulusGeometry.outerRadius < 0 ||
+      annulusGeometry.cy + annulusGeometry.outerRadius > sourceHeight
+    ) {
+      return "The outer circle must fit within the source height.";
+    }
+    if (annulusGeometry.stripHeight <= 0 || annulusGeometry.stripWidth <= 0) {
+      return "Unwrapped strip dimensions must be greater than zero.";
+    }
+    return null;
+  }, [geometryMode, cropGeometry, annulusGeometry, sourceWidth, sourceHeight]);
+
+  const regionIssue = useMemo(() => {
+    if (regionMode === "none") return null;
+    if (regionMode === "dynamic") {
+      if (![dynamicMin, dynamicMax].every(Number.isInteger)) {
+        return "Ellipse diameters must be whole pixels.";
+      }
+      if (dynamicMin <= 0) return "Minimum diameter must be greater than zero.";
+      if (dynamicMax <= dynamicMin) return "Maximum diameter must be greater than minimum.";
+      return null;
+    }
+    if (draftPolygon.length > 0) {
+      return draftPolygon.length < 3
+        ? "Add at least 3 points or cancel the unfinished polygon."
+        : "Finish or cancel the unfinished polygon.";
+    }
+    if (!shapes.some((shape) => shape.operation === "include")) {
+      return "Draw at least one Include shape to define an inspection area.";
+    }
+    if (staticMaskHasPixels === false) {
+      return "The final mask has no inspection pixels after exclusions and preprocessing.";
+    }
+    if (!maskName.trim()) return "Mask filename is required.";
+    if (maskName.includes("/") || maskName.includes("\\")) {
+      return "Mask filename cannot contain path separators.";
+    }
+    if (!maskName.toLowerCase().endsWith(".png")) {
+      return "Mask filename must end in .png.";
+    }
+    return null;
+  }, [
+    regionMode,
+    dynamicMin,
+    dynamicMax,
+    draftPolygon,
+    shapes,
+    maskName,
+    staticMaskHasPixels,
+  ]);
+
+  const modelInputIssue = ![inputHeight, inputWidth].every(Number.isInteger)
+    ? "Model input dimensions must be whole pixels."
+    : inputHeight <= 0 || inputWidth <= 0
+      ? "Model input dimensions must be greater than zero."
+      : null;
+  const tileIssue = !tilingEnabled
+    ? null
+    : ![tileHeight, tileWidth].every(Number.isInteger)
+      ? "Tile dimensions must be whole pixels."
+      : tileHeight <= 0 || tileWidth <= 0
+        ? "Tile dimensions must be greater than zero."
+        : tileHeight > processedHeight
+          ? `Tile height cannot exceed the processed height (${processedHeight} px).`
+          : tileWidth > processedWidth
+            ? `Tile width cannot exceed the processed width (${processedWidth} px).`
+            : null;
+  const strideIssue = !tilingEnabled
+    ? null
+    : ![strideHeight, strideWidth].every(Number.isInteger)
+      ? "Stride dimensions must be whole pixels."
+      : strideHeight <= 0 || strideWidth <= 0
+        ? "Stride dimensions must be greater than zero."
+        : strideHeight > tileHeight
+          ? "Height stride cannot exceed tile height because it would leave uninspected gaps."
+          : strideWidth > tileWidth
+            ? "Width stride cannot exceed tile width because it would leave uninspected gaps."
+            : null;
+  const coverageIssue = tilingEnabled && !tileIssue && !strideIssue && !tilingTiles.some((tile) => tile.included)
+    ? "No tile reaches the required 30% valid-region coverage."
+    : null;
+  const artifactIssue = !artifactEnabled
+    ? null
+    : ![artifactWidth, artifactHeight].every(Number.isInteger)
+      ? "Artifact maximum dimensions must be whole pixels."
+      : artifactWidth <= 0 || artifactHeight <= 0
+        ? "Artifact maximum dimensions must be greater than zero."
+        : null;
+  const profileNameIssue = !profileName.trim()
+    ? "Profile name is required."
+    : [".", ".."].includes(profileName.trim())
+      ? "Profile name cannot be “.” or “..”."
+      : profileName.includes("/") || profileName.includes("\\")
+        ? "Profile name cannot contain path separators."
+        : null;
+
   const validation = useMemo(() => {
-    const checks: Array<{ ok: boolean; label: string }> = [];
+    const checks: ValidationCheck[] = [];
     checks.push({
-      ok:
-        profileName.trim().length > 0 &&
-        !profileName.includes("/") &&
-        !profileName.includes("\\"),
-      label: "Profile name and filename match",
+      ok: !profileNameIssue,
+      label: profileNameIssue ?? "Profile name and filename are valid",
+      step: "review",
     });
     checks.push({
-      ok:
-        samples.length > 0 &&
-        samples.every(
-          (sample) =>
-            sample.width === sourceWidth && sample.height === sourceHeight,
-        ),
+      ok: samples.length > 0,
       label:
         samples.length === 0
           ? "Add at least one reference image"
           : `${samples.length} reference sample${samples.length === 1 ? "" : "s"} aligned`,
+      step: "samples",
     });
     checks.push({
-      ok:
-        geometryMode === "full" ||
-        (geometryMode === "crop"
-          ? cropGeometry.x >= 0 &&
-            cropGeometry.y >= 0 &&
-            cropGeometry.width > 0 &&
-            cropGeometry.height > 0 &&
-            cropGeometry.x + cropGeometry.width <= sourceWidth &&
-            cropGeometry.y + cropGeometry.height <= sourceHeight
-          : annulusGeometry.innerRadius > 0 &&
-            annulusGeometry.outerRadius > annulusGeometry.innerRadius &&
-            annulusGeometry.cx - annulusGeometry.outerRadius >= 0 &&
-            annulusGeometry.cy - annulusGeometry.outerRadius >= 0 &&
-            annulusGeometry.cx + annulusGeometry.outerRadius <= sourceWidth &&
-            annulusGeometry.cy + annulusGeometry.outerRadius <= sourceHeight &&
-            annulusGeometry.stripHeight > 0 &&
-            annulusGeometry.stripWidth > 0),
-      label:
-        geometryMode === "crop"
-          ? "Crop and restoration geometry match"
-          : geometryMode === "annulus"
-            ? "Annulus unwrap and wrap geometry match"
-            : "Full image geometry selected",
+      ok: !geometryIssue,
+      label: geometryIssue ?? (geometryMode === "full" ? "Full image geometry selected" : "Geometry fits the source"),
+      step: "geometry",
     });
     checks.push({
-      ok:
-        regionMode === "none" ||
-        (regionMode === "static"
-          ? shapes.some((shape) => shape.operation === "include") &&
-            maskName.trim().length > 0 &&
-            !maskName.includes("/") &&
-            !maskName.includes("\\") &&
-            maskName.toLowerCase().endsWith(".png")
-          : dynamicMin > 0 && dynamicMax > dynamicMin),
-      label:
-        regionMode === "static"
-          ? "Valid-region mask includes an inspection area"
-          : regionMode === "dynamic"
-            ? "Dynamic ellipse diameter range is valid"
-            : "Entire processed image is valid",
+      ok: !regionIssue,
+      label: regionIssue ?? (regionMode === "static" ? "Valid-region mask includes an inspection area" : regionMode === "dynamic" ? "Dynamic ellipse diameter range is valid" : "Entire processed image is valid"),
+      step: "region",
     });
     checks.push({
-      ok:
-        inputHeight > 0 &&
-        inputWidth > 0 &&
-        (!tilingEnabled ||
-          (tileHeight > 0 &&
-            tileWidth > 0 &&
-            strideHeight > 0 &&
-            strideWidth > 0 &&
-            tileHeight <= processedHeight &&
-            tileWidth <= processedWidth &&
-            strideHeight <= tileHeight &&
-            strideWidth <= tileWidth &&
-            tilingTiles.some((tile) => tile.included))) &&
-        (!artifactEnabled ||
-          (artifactWidth > 0 && artifactHeight > 0)),
-      label: tilingEnabled
-        ? `${tilingTiles.filter((tile) => tile.included).length} of ${tilingTiles.length} tiles included`
-        : "Model input size is valid",
+      ok: !modelInputIssue,
+      label: modelInputIssue ?? "Model input size is valid",
+      step: "model",
     });
+    if (tilingEnabled) {
+      checks.push({
+        ok: !tileIssue,
+        label: tileIssue ?? "Tile dimensions fit the processed image",
+        step: "model",
+      });
+      checks.push({
+        ok: !strideIssue,
+        label: strideIssue ?? "Stride leaves no uninspected gaps",
+        step: "model",
+      });
+    }
+    if (artifactEnabled) {
+      checks.push({
+        ok: !artifactIssue,
+        label: artifactIssue ?? "Artifact maximum size is valid",
+        step: "model",
+      });
+    }
+    if (tilingEnabled) {
+      checks.push({
+        ok: !coverageIssue,
+        label: coverageIssue ?? `${tilingTiles.filter((tile) => tile.included).length} of ${tilingTiles.length} tiles included`,
+        step: "model",
+      });
+    }
     return checks;
   }, [
-    profileName,
+    profileNameIssue,
     samples,
-    sourceWidth,
-    sourceHeight,
     geometryMode,
-    cropGeometry,
-    annulusGeometry,
+    geometryIssue,
     regionMode,
-    shapes,
-    maskName,
-    dynamicMin,
-    dynamicMax,
-    inputHeight,
-    inputWidth,
-    processedHeight,
-    processedWidth,
+    regionIssue,
     tilingEnabled,
-    tileHeight,
-    tileWidth,
-    strideHeight,
-    strideWidth,
     tilingTiles,
+    modelInputIssue,
+    tileIssue,
+    strideIssue,
+    coverageIssue,
     artifactEnabled,
-    artifactWidth,
-    artifactHeight,
+    artifactIssue,
   ]);
+
+  const stepValidation = (target: Step) => {
+    const checks = validation.filter((check) => check.step === target);
+    return checks.find((check) => !check.ok) ?? checks.at(-1);
+  };
 
   const profile = useMemo(() => {
     const output: Record<string, unknown> = {
@@ -2703,8 +2888,8 @@ export default function Home() {
               </div>
 
               <div className="panel-footer">
-                <div className="footer-status success">
-                  {samples.length ? <Check size={15} /> : <ImageIcon size={15} />}
+                <div className={`footer-status ${samples.length ? "success" : "error"}`}>
+                  {samples.length ? <Check size={15} /> : <AlertCircle size={15} />}
                   {samples.length ? "All dimensions match" : "No images"}
                 </div>
                 <button
@@ -2768,6 +2953,7 @@ export default function Home() {
                       <NumberField
                         label="X"
                         value={cropGeometry.x}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(x) =>
                           setCropGeometry((value) => ({ ...value, x }))
                         }
@@ -2775,11 +2961,13 @@ export default function Home() {
                       <NumberField
                         label="Y"
                         value={cropGeometry.y}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(y) =>
                           setCropGeometry((value) => ({ ...value, y }))
                         }
                       />
                     </div>
+                    {geometryIssue && <FieldMessage message={geometryIssue} />}
                   </div>
                   <div className="field-group">
                     <label className="field-label">Crop size</label>
@@ -2788,6 +2976,7 @@ export default function Home() {
                         label="Width"
                         value={cropGeometry.width}
                         min={1}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(width) =>
                           setCropGeometry((value) => ({ ...value, width }))
                         }
@@ -2796,6 +2985,7 @@ export default function Home() {
                         label="Height"
                         value={cropGeometry.height}
                         min={1}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(height) =>
                           setCropGeometry((value) => ({ ...value, height }))
                         }
@@ -2823,6 +3013,7 @@ export default function Home() {
                       <NumberField
                         label="X"
                         value={annulusGeometry.cx}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(cx) =>
                           setAnnulusGeometry((value) => ({ ...value, cx }))
                         }
@@ -2830,6 +3021,7 @@ export default function Home() {
                       <NumberField
                         label="Y"
                         value={annulusGeometry.cy}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(cy) =>
                           setAnnulusGeometry((value) => ({ ...value, cy }))
                         }
@@ -2843,6 +3035,7 @@ export default function Home() {
                         label="Inner"
                         value={annulusGeometry.innerRadius}
                         min={1}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(innerRadius) =>
                           setAnnulusGeometry((value) => ({
                             ...value,
@@ -2854,6 +3047,7 @@ export default function Home() {
                         label="Outer"
                         value={annulusGeometry.outerRadius}
                         min={2}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(outerRadius) =>
                           setAnnulusGeometry((value) => ({
                             ...value,
@@ -2870,6 +3064,7 @@ export default function Home() {
                         label="Height"
                         value={annulusGeometry.stripHeight}
                         min={1}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(stripHeight) =>
                           setAnnulusGeometry((value) => ({
                             ...value,
@@ -2881,6 +3076,7 @@ export default function Home() {
                         label="Width"
                         value={annulusGeometry.stripWidth}
                         min={1}
+                        invalid={Boolean(geometryIssue)}
                         onChange={(stripWidth) =>
                           setAnnulusGeometry((value) => ({
                             ...value,
@@ -2890,13 +3086,16 @@ export default function Home() {
                       />
                     </div>
                   </div>
+                  {geometryIssue && <FieldMessage message={geometryIssue} />}
                 </>
               )}
 
               <div className="panel-footer">
-                <div className="footer-status success">
-                  <Check size={15} />
-                  Geometry fits the source
+                <div
+                  className={`footer-status ${stepValidation("geometry")?.ok ? "success" : "error"}`}
+                >
+                  {stepValidation("geometry")?.ok ? <Check size={15} /> : <AlertCircle size={15} />}
+                  {stepValidation("geometry")?.label}
                 </div>
                 <button
                   className="button button-primary"
@@ -3082,11 +3281,18 @@ export default function Home() {
                       id="mask-name"
                       type="text"
                       value={maskName}
+                      aria-invalid={Boolean(
+                        !maskName.trim() ||
+                        maskName.includes("/") ||
+                        maskName.includes("\\") ||
+                        !maskName.toLowerCase().endsWith(".png"),
+                      )}
                       onChange={(event) => setMaskName(event.target.value)}
                     />
                     <div className="field-hint">
                       Saved under dataset/valid_regions/
                     </div>
+                    {regionIssue && <FieldMessage message={regionIssue} />}
                   </div>
                 </>
               )}
@@ -3110,15 +3316,18 @@ export default function Home() {
                         label="Minimum"
                         value={dynamicMin}
                         min={1}
+                        invalid={Boolean(regionIssue)}
                         onChange={setDynamicMin}
                       />
                       <NumberField
                         label="Maximum"
                         value={dynamicMax}
                         min={2}
+                        invalid={Boolean(regionIssue)}
                         onChange={setDynamicMax}
                       />
                     </div>
+                    {regionIssue && <FieldMessage message={regionIssue} />}
                   </div>
                 </>
               )}
@@ -3139,15 +3348,15 @@ export default function Home() {
               <div className="panel-footer">
                 <div
                   className={`footer-status ${
-                    validation[3]?.ok ? "success" : "error"
+                    stepValidation("region")?.ok ? "success" : "error"
                   }`}
                 >
-                  {validation[3]?.ok ? (
+                  {stepValidation("region")?.ok ? (
                     <Check size={15} />
                   ) : (
                     <AlertCircle size={15} />
                   )}
-                  {validation[3]?.label}
+                  {stepValidation("region")?.label}
                 </div>
                 <button
                   className="button button-primary"
@@ -3170,12 +3379,14 @@ export default function Home() {
                     label="Height"
                     value={inputHeight}
                     min={1}
+                    invalid={Boolean(modelInputIssue)}
                     onChange={setInputHeight}
                   />
                   <NumberField
                     label="Width"
                     value={inputWidth}
                     min={1}
+                    invalid={Boolean(modelInputIssue)}
                     onChange={setInputWidth}
                   />
                 </div>
@@ -3184,6 +3395,7 @@ export default function Home() {
                     ? "Every native tile is resized to this size."
                     : "The complete processed image is resized to this size."}
                 </div>
+                {modelInputIssue && <FieldMessage message={modelInputIssue} />}
               </div>
 
               <ToggleRow
@@ -3207,18 +3419,21 @@ export default function Home() {
                         label="Height"
                         value={tileHeight}
                         min={1}
+                        invalid={Boolean(tileIssue)}
                         onChange={setTileHeight}
                       />
                       <NumberField
                         label="Width"
                         value={tileWidth}
                         min={1}
+                        invalid={Boolean(tileIssue)}
                         onChange={setTileWidth}
                       />
                     </div>
                     <div className="field-hint">
                       Pixels in the {processedWidth} × {processedHeight} processed image.
                     </div>
+                    {tileIssue && <FieldMessage message={tileIssue} />}
                   </div>
                   <div className="field-group">
                     <label className="field-label">Stride</label>
@@ -3227,14 +3442,20 @@ export default function Home() {
                         label="Height"
                         value={strideHeight}
                         min={1}
+                        invalid={Boolean(strideIssue)}
                         onChange={setStrideHeight}
                       />
                       <NumberField
                         label="Width"
                         value={strideWidth}
                         min={1}
+                        invalid={Boolean(strideIssue)}
                         onChange={setStrideWidth}
                       />
+                    </div>
+                    {strideIssue && <FieldMessage message={strideIssue} />}
+                    <div className="field-hint">
+                      Equal to tile size gives no overlap; smaller values create overlapping tiles.
                     </div>
                   </div>
                   <div className="tile-legend">
@@ -3245,6 +3466,7 @@ export default function Home() {
                       <i className="skipped" /> Below 30% ROI
                     </span>
                   </div>
+                  {coverageIssue && <FieldMessage message={coverageIssue} />}
                 </>
               )}
 
@@ -3263,30 +3485,33 @@ export default function Home() {
                       label="Width"
                       value={artifactWidth}
                       min={1}
+                      invalid={Boolean(artifactIssue)}
                       onChange={setArtifactWidth}
                     />
                     <NumberField
                       label="Height"
                       value={artifactHeight}
                       min={1}
+                      invalid={Boolean(artifactIssue)}
                       onChange={setArtifactHeight}
                     />
                   </div>
+                  {artifactIssue && <FieldMessage message={artifactIssue} />}
                 </div>
               )}
 
               <div className="panel-footer">
                 <div
                   className={`footer-status ${
-                    validation[4]?.ok ? "success" : "error"
+                    stepValidation("model")?.ok ? "success" : "error"
                   }`}
                 >
-                  {validation[4]?.ok ? (
+                  {stepValidation("model")?.ok ? (
                     <Check size={15} />
                   ) : (
                     <AlertCircle size={15} />
                   )}
-                  {validation[4]?.label}
+                  {stepValidation("model")?.label}
                 </div>
                 <button
                   className="button button-primary"
@@ -3310,11 +3535,20 @@ export default function Home() {
                   id="profile-name"
                   type="text"
                   value={profileName}
+                  aria-invalid={Boolean(profileNameIssue)}
                   onChange={(event) => setProfileName(event.target.value)}
                 />
                 <div className="field-hint">
                   Exported as profiles/{slugify(profileName)}.json
                 </div>
+                {profileNameIssue ? (
+                  <FieldMessage message={profileNameIssue} />
+                ) : profileName.trim() !== slugify(profileName) ? (
+                  <FieldMessage
+                    tone="warning"
+                    message={`Filename will be normalized to ${slugify(profileName)}.json.`}
+                  />
+                ) : null}
               </div>
 
               <div className="section-block">
@@ -3389,6 +3623,11 @@ export default function Home() {
                   </>
                 )}
               </button>
+              {validation.some((check) => !check.ok) && (
+                <FieldMessage
+                  message={`Export is unavailable: ${validation.find((check) => !check.ok)?.label}`}
+                />
+              )}
 
             </div>
           )}
@@ -3398,15 +3637,35 @@ export default function Home() {
   );
 }
 
+function FieldMessage({
+  message,
+  tone = "error",
+}: {
+  message: string;
+  tone?: "error" | "warning";
+}) {
+  return (
+    <div
+      className={`field-message ${tone}`}
+      role={tone === "error" ? "alert" : "status"}
+    >
+      <AlertCircle size={13} />
+      <span>{message}</span>
+    </div>
+  );
+}
+
 function NumberField({
   label,
   value,
   min,
+  invalid = false,
   onChange,
 }: {
   label: string;
   value: number;
   min?: number;
+  invalid?: boolean;
   onChange: (value: number) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -3436,6 +3695,8 @@ function NumberField({
         type="number"
         value={Number.isFinite(value) ? value : ""}
         min={min}
+        step={1}
+        aria-invalid={invalid}
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </label>

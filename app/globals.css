@@ -791,6 +791,33 @@ input[type="range"] {
   font-size: 10px;
 }
 
+.field-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 7px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.field-message svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.field-message.error {
+  color: var(--exclude);
+}
+
+.field-message.warning {
+  color: #8a641d;
+}
+
+input[aria-invalid="true"] {
+  border-color: var(--exclude);
+  box-shadow: 0 0 0 2px var(--exclude-soft);
+}
+
 .segmented-control {
   display: grid;
   gap: 4px;
