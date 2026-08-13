@@ -392,7 +392,7 @@ export default function Home() {
   });
   const [inputHeight, setInputHeight] = useState(256);
   const [inputWidth, setInputWidth] = useState(256);
-  const [tilingEnabled, setTilingEnabled] = useState(true);
+  const [tilingEnabled, setTilingEnabled] = useState(false);
   const [tileHeight, setTileHeight] = useState(128);
   const [tileWidth, setTileWidth] = useState(128);
   const [strideHeight, setStrideHeight] = useState(64);
