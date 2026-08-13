@@ -627,6 +627,10 @@ button:disabled {
   object-fit: fill;
 }
 
+.annulus-strip-preview > .processed-mask-preview {
+  pointer-events: none;
+}
+
 .annulus-strip-preview > svg {
   touch-action: none;
 }

@@ -591,6 +591,7 @@ export default function Home() {
   const svgRef = useRef<SVGSVGElement>(null);
   const maskPreviewRef = useRef<HTMLCanvasElement>(null);
   const processedPreviewRef = useRef<HTMLCanvasElement>(null);
+  const processedMaskPreviewRef = useRef<HTMLCanvasElement>(null);
   const samplesRef = useRef<SampleImage[]>([]);
   const polygonDraftRef = useRef<PolygonDraftHandle>(null);
 
@@ -779,6 +780,88 @@ export default function Home() {
   useEffect(() => {
     samplesRef.current = samples;
   }, [samples]);
+
+  useEffect(() => {
+    if (tilingEnabled || !processedMask) return;
+    const canvas = processedMaskPreviewRef.current;
+    if (!canvas) return;
+
+    const renderOverlay = () => {
+      const displayWidth = Math.max(1, Math.round(canvas.clientWidth));
+      const displayHeight = Math.max(1, Math.round(canvas.clientHeight));
+      const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+      canvas.width = Math.round(displayWidth * pixelRatio);
+      canvas.height = Math.round(displayHeight * pixelRatio);
+      const context = canvas.getContext("2d");
+      if (!context) return;
+
+      const { width, height, pixels } = processedMask;
+      const maskCanvas = document.createElement("canvas");
+      maskCanvas.width = width;
+      maskCanvas.height = height;
+      const maskContext = maskCanvas.getContext("2d");
+      if (!maskContext) return;
+      const maskImage = maskContext.createImageData(width, height);
+      for (let index = 0; index < pixels.length; index += 1) {
+        if (!pixels[index]) continue;
+        const rgbaIndex = index * 4;
+        maskImage.data[rgbaIndex] = 76;
+        maskImage.data[rgbaIndex + 1] = 139;
+        maskImage.data[rgbaIndex + 2] = 105;
+        maskImage.data[rgbaIndex + 3] = 41;
+      }
+      maskContext.putImageData(maskImage, 0, 0);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
+
+      context.scale(pixelRatio, pixelRatio);
+      const displayX = (x: number) => (x / width) * displayWidth;
+      const displayY = (y: number) => (y / height) * displayHeight;
+      const isValid = (x: number, y: number) =>
+        x >= 0 && y >= 0 && x < width && y < height
+          ? pixels[y * width + x] > 0
+          : false;
+      const segmentsByCase: Record<number, [number, number][]> = {
+        1: [[3, 0]], 2: [[0, 1]], 3: [[3, 1]], 4: [[1, 2]],
+        5: [[3, 2], [0, 1]], 6: [[0, 2]], 7: [[3, 2]],
+        8: [[2, 3]], 9: [[0, 2]], 10: [[0, 3], [1, 2]],
+        11: [[1, 2]], 12: [[1, 3]], 13: [[0, 1]], 14: [[3, 0]],
+      };
+      context.beginPath();
+      for (let y = -1; y < height; y += 1) {
+        for (let x = -1; x < width; x += 1) {
+          const contourCase =
+            (isValid(x, y) ? 1 : 0) |
+            (isValid(x + 1, y) ? 2 : 0) |
+            (isValid(x + 1, y + 1) ? 4 : 0) |
+            (isValid(x, y + 1) ? 8 : 0);
+          const segments = segmentsByCase[contourCase];
+          if (!segments) continue;
+          const points = [
+            [displayX(x + 1), displayY(y + 0.5)],
+            [displayX(x + 1.5), displayY(y + 1)],
+            [displayX(x + 1), displayY(y + 1.5)],
+            [displayX(x + 0.5), displayY(y + 1)],
+          ];
+          for (const [start, end] of segments) {
+            context.moveTo(points[start][0], points[start][1]);
+            context.lineTo(points[end][0], points[end][1]);
+          }
+        }
+      }
+      context.strokeStyle = "rgba(76, 139, 105, 0.9)";
+      context.lineWidth = 1.5;
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.stroke();
+    };
+
+    renderOverlay();
+    const resizeObserver = new ResizeObserver(renderOverlay);
+    resizeObserver.observe(canvas);
+    return () => resizeObserver.disconnect();
+  }, [processedMask, tilingEnabled]);
 
   useEffect(() => {
     return () => {
@@ -2875,6 +2958,13 @@ export default function Home() {
                     className="processed-preview"
                     aria-label={`Unwrapped annulus preview of ${activeSample.name}`}
                   />
+                  {!tilingEnabled && regionMode === "static" && processedMask && (
+                    <canvas
+                      ref={processedMaskPreviewRef}
+                      className="processed-mask-preview"
+                      aria-label="Valid region on unwrapped annulus"
+                    />
+                  )}
                   {tilingEnabled && (
                     <svg
                       viewBox={`0 0 ${processedWidth} ${processedHeight}`}
