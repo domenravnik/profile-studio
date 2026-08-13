@@ -28,7 +28,9 @@ import {
   ChangeEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  forwardRef,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -85,7 +87,70 @@ type AnnulusGeometry = {
 type ProcessedMask = { width: number; height: number; pixels: Uint8Array };
 type ValidationCheck = { ok: boolean; label: string; step: Step };
 
+type PolygonDraftHandle = {
+  addPoint: (point: Point) => void;
+  clear: () => void;
+  getPoints: () => Point[];
+};
+
 const MASK_PREVIEW_MAX_DIMENSION = 640;
+
+const PolygonDraftLayer = forwardRef<
+  PolygonDraftHandle,
+  {
+    operation: Operation;
+    handleRadius: number;
+    visible: boolean;
+    onActiveChange: (active: boolean) => void;
+  }
+>(function PolygonDraftLayer(
+  { operation, handleRadius, visible, onActiveChange },
+  ref,
+) {
+  const [points, setPoints] = useState<Point[]>([]);
+  const pointsRef = useRef<Point[]>([]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      addPoint(point) {
+        const next = [...pointsRef.current, point];
+        if (pointsRef.current.length === 0) onActiveChange(true);
+        pointsRef.current = next;
+        setPoints(next);
+      },
+      clear() {
+        if (pointsRef.current.length > 0) onActiveChange(false);
+        pointsRef.current = [];
+        setPoints([]);
+      },
+      getPoints() {
+        return pointsRef.current;
+      },
+    }),
+    [onActiveChange],
+  );
+
+  if (points.length === 0) return null;
+
+  return (
+    <g display={visible ? undefined : "none"}>
+      <polyline
+        points={points.map((point) => `${point.x},${point.y}`).join(" ")}
+        className={`draft-shape ${operation}`}
+      />
+      {points.map((point, index) => (
+        <circle
+          key={index}
+          cx={point.x}
+          cy={point.y}
+          r={handleRadius}
+          className={`roi-handle ${operation}`}
+        />
+      ))}
+    </g>
+  );
+});
 
 type DragState =
   | {
@@ -365,6 +430,36 @@ const renderFinalMask = (
   makeMaskBinary(context, width, height);
 };
 
+const renderFinalMaskPreview = (
+  context: CanvasRenderingContext2D,
+  previewWidth: number,
+  previewHeight: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  shapes: RoiShape[],
+  geometryMode: GeometryMode,
+  crop: CropGeometry,
+  annulus: AnnulusGeometry,
+) => {
+  context.save();
+  context.scale(previewWidth / sourceWidth, previewHeight / sourceHeight);
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, sourceWidth, sourceHeight);
+  context.save();
+  clipToGeometry(
+    context,
+    sourceWidth,
+    sourceHeight,
+    geometryMode,
+    crop,
+    annulus,
+  );
+  renderMask(context, sourceWidth, sourceHeight, shapes);
+  context.restore();
+  context.restore();
+  makeMaskBinary(context, previewWidth, previewHeight);
+};
+
 const drawProcessedRaster = (
   source: HTMLCanvasElement,
   target: HTMLCanvasElement,
@@ -464,7 +559,7 @@ export default function Home() {
   const [undoStack, setUndoStack] = useState<RoiShape[][]>([]);
   const [redoStack, setRedoStack] = useState<RoiShape[][]>([]);
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
-  const [draftPolygon, setDraftPolygon] = useState<Point[]>([]);
+  const [hasDraftPolygon, setHasDraftPolygon] = useState(false);
   const [ellipseStart, setEllipseStart] = useState<Point | null>(null);
   const [ellipseCurrent, setEllipseCurrent] = useState<Point | null>(null);
   const [dragState, setDragState] = useState<DragState>(null);
@@ -497,6 +592,7 @@ export default function Home() {
   const maskPreviewRef = useRef<HTMLCanvasElement>(null);
   const processedPreviewRef = useRef<HTMLCanvasElement>(null);
   const samplesRef = useRef<SampleImage[]>([]);
+  const polygonDraftRef = useRef<PolygonDraftHandle>(null);
 
   const activeSample =
     samples.find((sample) => sample.id === activeSampleId) ?? samples[0] ?? null;
@@ -523,10 +619,17 @@ export default function Home() {
     ),
   );
   const needsProcessedPreview = step === "model" || step === "review";
+  const isShapeDragging =
+    dragState?.kind === "shape" ||
+    dragState?.kind === "polygon-point" ||
+    dragState?.kind === "ellipse-radius";
   const previewWidth = sourceWidth;
   const previewHeight = sourceHeight;
 
   useEffect(() => {
+    // Keep the SVG editing overlay responsive. The small mask preview catches
+    // up once the drag ends instead of competing with every pointer event.
+    if (isShapeDragging) return;
     const canvas = maskPreviewRef.current;
     if (!canvas) return;
     const previewScale = Math.min(
@@ -537,13 +640,10 @@ export default function Home() {
     canvas.height = Math.max(1, Math.round(sourceHeight * previewScale));
     const context = canvas.getContext("2d");
     if (!context) return;
-    const sourceMask = document.createElement("canvas");
-    sourceMask.width = sourceWidth;
-    sourceMask.height = sourceHeight;
-    const sourceContext = sourceMask.getContext("2d");
-    if (!sourceContext) return;
-    renderFinalMask(
-      sourceContext,
+    renderFinalMaskPreview(
+      context,
+      canvas.width,
+      canvas.height,
       sourceWidth,
       sourceHeight,
       shapes,
@@ -553,7 +653,7 @@ export default function Home() {
     );
     let maskHasPixels: boolean | null = null;
     if (regionMode === "static") {
-      const rgba = sourceContext.getImageData(0, 0, sourceWidth, sourceHeight).data;
+      const rgba = context.getImageData(0, 0, canvas.width, canvas.height).data;
       maskHasPixels = false;
       for (let index = 0; index < rgba.length; index += 4) {
         if (rgba[index] > 0) {
@@ -562,8 +662,6 @@ export default function Home() {
         }
       }
     }
-    context.imageSmoothingEnabled = false;
-    context.drawImage(sourceMask, 0, 0, canvas.width, canvas.height);
     const maskStateTimer = window.setTimeout(
       () => setStaticMaskHasPixels(maskHasPixels),
       0,
@@ -578,6 +676,7 @@ export default function Home() {
     annulusGeometry,
     regionMode,
     step,
+    isShapeDragging,
   ]);
 
   useEffect(() => {
@@ -726,6 +825,7 @@ export default function Home() {
   };
 
   const finishPolygon = () => {
+    const draftPolygon = polygonDraftRef.current?.getPoints() ?? [];
     if (draftPolygon.length < 3) return;
     const nextShape: PolygonShape = {
       id: crypto.randomUUID(),
@@ -735,7 +835,7 @@ export default function Home() {
       points: draftPolygon,
     };
     updateShapes([...shapes, nextShape]);
-    setDraftPolygon([]);
+    polygonDraftRef.current?.clear();
     setSelectedShapeId(nextShape.id);
     setTool("select");
   };
@@ -863,7 +963,7 @@ export default function Home() {
     ) {
       return;
     }
-    setDraftPolygon((points) => [...points, getCanvasPoint(event)]);
+    polygonDraftRef.current?.addPoint(getCanvasPoint(event));
   };
 
   const handleCanvasPointerMove = (
@@ -1554,10 +1654,8 @@ export default function Home() {
       if (dynamicMax <= dynamicMin) return "Maximum diameter must be greater than minimum.";
       return null;
     }
-    if (draftPolygon.length > 0) {
-      return draftPolygon.length < 3
-        ? "Add at least 3 points or cancel the unfinished polygon."
-        : "Finish or cancel the unfinished polygon.";
+    if (hasDraftPolygon) {
+      return "Finish or cancel the unfinished polygon.";
     }
     if (!shapes.some((shape) => shape.operation === "include")) {
       return "Draw at least one Include shape to define an inspection area.";
@@ -1577,7 +1675,7 @@ export default function Home() {
     regionMode,
     dynamicMin,
     dynamicMax,
-    draftPolygon,
+    hasDraftPolygon,
     shapes,
     maskName,
     staticMaskHasPixels,
@@ -2413,26 +2511,6 @@ export default function Home() {
                       </>
                     )}
 
-                    {draftPolygon.length > 0 && (
-                      <g>
-                        <polyline
-                          points={draftPolygon
-                            .map((point) => `${point.x},${point.y}`)
-                            .join(" ")}
-                          className={`draft-shape ${operation}`}
-                        />
-                        {draftPolygon.map((point, index) => (
-                          <circle
-                            key={index}
-                            cx={point.x}
-                            cy={point.y}
-                            r={Math.max(sourceWidth, sourceHeight) * 0.007}
-                            className={`roi-handle ${operation}`}
-                          />
-                        ))}
-                      </g>
-                    )}
-
                     {ellipseStart && ellipseCurrent && (
                       <ellipse
                         cx={(ellipseStart.x + ellipseCurrent.x) / 2}
@@ -2444,6 +2522,14 @@ export default function Home() {
                     )}
                   </g>
                 )}
+
+              <PolygonDraftLayer
+                ref={polygonDraftRef}
+                operation={operation}
+                handleRadius={Math.max(sourceWidth, sourceHeight) * 0.007}
+                visible={step === "region" && regionMode === "static"}
+                onActiveChange={setHasDraftPolygon}
+              />
 
               {(step === "model" || step === "review") &&
                 geometryMode === "crop" && (
@@ -2728,7 +2814,10 @@ export default function Home() {
                       type="button"
                       key={item.id}
                       onClick={() => {
-                        if (draftPolygon.length >= 3 && item.id !== "polygon")
+                        if (
+                          (polygonDraftRef.current?.getPoints().length ?? 0) >= 3 &&
+                          item.id !== "polygon"
+                        )
                           finishPolygon();
                         setTool(item.id);
                       }}
@@ -3233,17 +3322,15 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {draftPolygon.length > 0 && (
+                  {hasDraftPolygon && (
                     <div className="draft-actions">
-                      <span className="draft-count">
-                        {draftPolygon.length} polygon points
-                      </span>
+                      <span className="draft-count">Polygon in progress</span>
                       <span className="draft-hint">Double-click to finish</span>
                       <button
                         className="icon-button"
                         type="button"
                         aria-label="Cancel polygon"
-                        onClick={() => setDraftPolygon([])}
+                        onClick={() => polygonDraftRef.current?.clear()}
                       >
                         <X size={15} />
                       </button>
