@@ -280,6 +280,65 @@ const renderMask = (
     });
 };
 
+const clipToGeometry = (
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  geometryMode: GeometryMode,
+  crop: CropGeometry,
+  annulus: AnnulusGeometry,
+) => {
+  context.beginPath();
+  if (geometryMode === "full") {
+    context.rect(0, 0, width, height);
+    context.clip();
+    return;
+  }
+  if (geometryMode === "crop") {
+    context.rect(crop.x, crop.y, crop.width, crop.height);
+    context.clip();
+    return;
+  }
+
+  context.arc(annulus.cx, annulus.cy, annulus.outerRadius, 0, Math.PI * 2);
+  context.arc(annulus.cx, annulus.cy, annulus.innerRadius, 0, Math.PI * 2);
+  context.clip("evenodd");
+};
+
+const makeMaskBinary = (
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+) => {
+  const image = context.getImageData(0, 0, width, height);
+  for (let index = 0; index < image.data.length; index += 4) {
+    const value = image.data[index] >= 128 ? 255 : 0;
+    image.data[index] = value;
+    image.data[index + 1] = value;
+    image.data[index + 2] = value;
+    image.data[index + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+};
+
+const renderFinalMask = (
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  shapes: RoiShape[],
+  geometryMode: GeometryMode,
+  crop: CropGeometry,
+  annulus: AnnulusGeometry,
+) => {
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, width, height);
+  context.save();
+  clipToGeometry(context, width, height, geometryMode, crop, annulus);
+  renderMask(context, width, height, shapes);
+  context.restore();
+  makeMaskBinary(context, width, height);
+};
+
 const drawProcessedRaster = (
   source: HTMLCanvasElement,
   target: HTMLCanvasElement,
@@ -451,16 +510,32 @@ export default function Home() {
     canvas.height = Math.max(1, Math.round(sourceHeight * previewScale));
     const context = canvas.getContext("2d");
     if (!context) return;
-    context.setTransform(
-      canvas.width / sourceWidth,
-      0,
-      0,
-      canvas.height / sourceHeight,
-      0,
-      0,
+    const sourceMask = document.createElement("canvas");
+    sourceMask.width = sourceWidth;
+    sourceMask.height = sourceHeight;
+    const sourceContext = sourceMask.getContext("2d");
+    if (!sourceContext) return;
+    renderFinalMask(
+      sourceContext,
+      sourceWidth,
+      sourceHeight,
+      shapes,
+      geometryMode,
+      cropGeometry,
+      annulusGeometry,
     );
-    renderMask(context, sourceWidth, sourceHeight, shapes);
-  }, [shapes, sourceWidth, sourceHeight, regionMode, step]);
+    context.imageSmoothingEnabled = false;
+    context.drawImage(sourceMask, 0, 0, canvas.width, canvas.height);
+  }, [
+    shapes,
+    sourceWidth,
+    sourceHeight,
+    geometryMode,
+    cropGeometry,
+    annulusGeometry,
+    regionMode,
+    step,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -509,7 +584,15 @@ export default function Home() {
       sourceMaskCanvas.height = sourceHeight;
       const sourceMaskContext = sourceMaskCanvas.getContext("2d");
       if (!sourceMaskContext) return;
-      renderMask(sourceMaskContext, sourceWidth, sourceHeight, shapes);
+      renderFinalMask(
+        sourceMaskContext,
+        sourceWidth,
+        sourceHeight,
+        shapes,
+        geometryMode,
+        cropGeometry,
+        annulusGeometry,
+      );
 
       const processedMaskCanvas = document.createElement("canvas");
       processedMaskCanvas.width = processedWidth;
@@ -1549,7 +1632,15 @@ export default function Home() {
     canvas.height = sourceHeight;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas is unavailable.");
-    renderMask(context, sourceWidth, sourceHeight, shapes);
+    renderFinalMask(
+      context,
+      sourceWidth,
+      sourceHeight,
+      shapes,
+      geometryMode,
+      cropGeometry,
+      annulusGeometry,
+    );
     return canvasToBlob(canvas);
   };
 

@@ -47,7 +47,9 @@ npm run start
 ```
 
 The mask is an 8-bit source-resolution PNG containing only black and white
-pixels. Static polygon and ellipse drawings both export as a mask valid region.
+pixels. Its valid pixels are the intersection of the configured preprocessing
+geometry and the static polygon and ellipse drawings. Pixels outside a crop or
+annulus are therefore always black in the exported mask.
 The profile's `ellipse` valid-region type remains reserved for per-image dynamic
 ellipse detection.
 
