@@ -2225,7 +2225,7 @@ export default function Home() {
       const url = URL.createObjectURL(bundle);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `${resolvedProfileName}-profile.zip`;
+      anchor.download = `${resolvedProfileName}.zip`;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {

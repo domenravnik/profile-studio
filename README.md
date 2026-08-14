@@ -39,7 +39,7 @@ npm run start
 Every export contains the detector profile and a short README:
 
 ```text
-<profile-name>-profile.zip
+<profile-name>.zip
 ├── profiles/<profile-name>.json
 └── README.txt
 ```
