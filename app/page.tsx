@@ -21,6 +21,7 @@ import {
   Upload,
   WandSparkles,
   X,
+  Zap,
 } from "lucide-react";
 import JSZip from "jszip";
 import {
@@ -2247,7 +2248,7 @@ export default function Home() {
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
-            PS
+            <Zap size={19} strokeWidth={2.3} />
           </div>
           <div>
             <div className="brand-name">Profile Studio</div>
