@@ -1,8 +1,8 @@
 # Profile Studio
 
-Profile Studio is a standalone, local-first editor for anomaly-detection
-training profiles. It turns image geometry, valid regions, tiling, and artifact
-settings into a detector-compatible JSON profile and optional binary mask.
+Profile Studio is a local editor for anomaly-detector training profiles. Use a
+reference image to configure preprocessing, valid regions, tiling, and output
+settings, then download the files needed by the detector.
 
 ## Features
 
@@ -12,8 +12,8 @@ settings into a detector-compatible JSON profile and optional binary mask.
 - Configure dynamic ellipse localization.
 - Preview native post-geometry tiling and exact static-ROI coverage with the 30% inclusion threshold.
 - Import an existing profile JSON.
-- Validate settings and export a portable ZIP with the profile, mask, preview,
-  editable project data, and placement instructions.
+- Validate settings and download a ZIP containing the detector profile, an
+  optional static mask, and simple installation instructions.
 - Keep drafts in browser storage; uploaded images remain local to the browser.
 
 ## Run locally
@@ -34,24 +34,30 @@ npm run build
 npm run start
 ```
 
-## Export layout
+## Exported files
+
+Every export contains the detector profile and a short README:
 
 ```text
 <profile-name>-profile.zip
 ├── profiles/<profile-name>.json
-├── dataset/valid_regions/<mask-name>.png
-├── previews/valid-region-overlay.png
-├── builder-project.json
-├── manifest.json
 └── README.txt
 ```
 
-The mask is an 8-bit source-resolution PNG containing only black and white
-pixels. Its valid pixels are the intersection of the configured preprocessing
-geometry and the static polygon and ellipse drawings. Pixels outside a crop or
-annulus are therefore always black in the exported mask.
-The profile's `ellipse` valid-region type remains reserved for per-image dynamic
-ellipse detection.
+Profiles that use a static valid region also contain its mask:
+
+```text
+dataset/valid_regions/<mask-name>.png
+```
+
+Copy the profile JSON into the detector's `PROFILES_ROOT`. For a static valid
+region, also copy the mask into the target dataset's `valid_regions` directory.
+The included `README.txt` repeats these paths for the exported profile.
+
+The optional mask is an 8-bit, source-resolution PNG containing only black and
+white pixels. White pixels are the usable part of the configured geometry and
+static shapes; pixels outside a crop or annulus are black. Dynamic ellipse
+regions are detected for each image and therefore do not export a mask.
 
 When tiling is enabled, `tile_size` and `stride` are measured in the native
 processed image (full image, crop, or unwrapped annulus). Every included tile is

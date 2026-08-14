@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Circle,
   Crop,
-  FileCheck2,
   FileJson,
   FolderArchive,
   Grid3X3,
@@ -2174,35 +2173,6 @@ export default function Home() {
     return canvasToBlob(canvas);
   };
 
-  const drawPreview = async () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = sourceWidth;
-    canvas.height = sourceHeight;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Canvas is unavailable.");
-    if (activeSample) {
-      const image = new Image();
-      image.src = activeSample.url;
-      await image.decode();
-      context.drawImage(image, 0, 0, sourceWidth, sourceHeight);
-    } else {
-      throw new Error("Add a reference image before creating a preview.");
-    }
-    shapes.forEach((shape) => {
-      drawShapePath(context, shape);
-      context.fillStyle =
-        shape.operation === "include"
-          ? "rgba(68, 110, 87, 0.30)"
-          : "rgba(182, 77, 67, 0.35)";
-      context.fill();
-      context.strokeStyle =
-        shape.operation === "include" ? "#446e57" : "#b64d43";
-      context.lineWidth = Math.max(2, sourceWidth / 500);
-      context.stroke();
-    });
-    return canvasToBlob(canvas);
-  };
-
   const exportBundle = async () => {
     if (validation.some((check) => !check.ok)) {
       setNotice("Resolve the blocking issues before exporting.");
@@ -2222,56 +2192,8 @@ export default function Home() {
 
       if (regionMode === "static") {
         zip.file(`dataset/valid_regions/${resolvedMaskName}`, await drawMask());
-        zip.file(
-          "previews/valid-region-overlay.png",
-          await drawPreview(),
-        );
       }
 
-      zip.file(
-        "builder-project.json",
-        `${JSON.stringify(
-          {
-            builder: "Profile Studio",
-            version: 1,
-            source_size: [sourceHeight, sourceWidth],
-            geometry: {
-              mode: geometryMode,
-              crop: cropGeometry,
-              annulus: annulusGeometry,
-            },
-            valid_region: {
-              mode: regionMode,
-              shapes,
-              dynamic_diameter_range: [dynamicMin, dynamicMax],
-              dynamic_center: dynamicCenter,
-            },
-            profile,
-          },
-          null,
-          2,
-        )}\n`,
-      );
-      zip.file(
-        "manifest.json",
-        `${JSON.stringify(
-          {
-            generated_by: "Profile Studio",
-            profile: `profiles/${resolvedProfileName}.json`,
-            valid_region:
-              regionMode === "static"
-                ? `dataset/valid_regions/${resolvedMaskName}`
-                : null,
-            source_dimensions: {
-              width: sourceWidth,
-              height: sourceHeight,
-            },
-            samples: samples.map((sample) => sample.name),
-          },
-          null,
-          2,
-        )}\n`,
-      );
       zip.file(
         "README.txt",
         [
@@ -3967,11 +3889,6 @@ export default function Home() {
                     <Check size={14} />
                   </div>
                 )}
-                <div className="bundle-row">
-                  <FileCheck2 size={15} />
-                  <span>manifest.json + editable project</span>
-                  <Check size={14} />
-                </div>
               </div>
 
               <button
