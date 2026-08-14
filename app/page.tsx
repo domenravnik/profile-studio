@@ -6,8 +6,8 @@ import {
   ChevronRight,
   Circle,
   Crop,
+  Download,
   FileJson,
-  FolderArchive,
   Grid3X3,
   Hexagon,
   Image as ImageIcon,
@@ -3880,8 +3880,8 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <FolderArchive size={17} />
-                    Download profile bundle
+                    <Download size={17} />
+                    Download
                   </>
                 )}
               </button>
