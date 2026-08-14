@@ -2057,11 +2057,6 @@ export default function Home() {
     artifactIssue,
   ]);
 
-  const stepValidation = (target: Step) => {
-    const checks = validation.filter((check) => check.step === target);
-    return checks.find((check) => !check.ok) ?? checks.at(-1);
-  };
-
   const profile = useMemo(() => {
     const output: Record<string, unknown> = {
       name: slugify(profileName),
@@ -3167,10 +3162,6 @@ export default function Home() {
               </div>
 
               <div className="panel-footer">
-                <div className={`footer-status ${samples.length ? "success" : "error"}`}>
-                  {samples.length ? <Check size={15} /> : <AlertCircle size={15} />}
-                  {samples.length ? "All dimensions match" : "No images"}
-                </div>
                 <button
                   className="button button-primary"
                   type="button"
@@ -3360,12 +3351,6 @@ export default function Home() {
               )}
 
               <div className="panel-footer">
-                <div
-                  className={`footer-status ${stepValidation("geometry")?.ok ? "success" : "error"}`}
-                >
-                  {stepValidation("geometry")?.ok ? <Check size={15} /> : <AlertCircle size={15} />}
-                  {stepValidation("geometry")?.label}
-                </div>
                 <button
                   className="button button-primary"
                   type="button"
@@ -3622,18 +3607,6 @@ export default function Home() {
               )}
 
               <div className="panel-footer">
-                <div
-                  className={`footer-status ${
-                    stepValidation("region")?.ok ? "success" : "error"
-                  }`}
-                >
-                  {stepValidation("region")?.ok ? (
-                    <Check size={15} />
-                  ) : (
-                    <AlertCircle size={15} />
-                  )}
-                  {stepValidation("region")?.label}
-                </div>
                 <button
                   className="button button-primary"
                   type="button"
@@ -3801,18 +3774,6 @@ export default function Home() {
               )}
 
               <div className="panel-footer">
-                <div
-                  className={`footer-status ${
-                    stepValidation("model")?.ok ? "success" : "error"
-                  }`}
-                >
-                  {stepValidation("model")?.ok ? (
-                    <Check size={15} />
-                  ) : (
-                    <AlertCircle size={15} />
-                  )}
-                  {stepValidation("model")?.label}
-                </div>
                 <button
                   className="button button-primary"
                   type="button"

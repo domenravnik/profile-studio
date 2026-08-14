@@ -75,7 +75,6 @@ button:disabled {
 .drawing-toolbar,
 .sample-switcher,
 .panel-footer,
-.footer-status,
 .section-heading,
 .mini-actions,
 .info-panel,
@@ -1331,25 +1330,12 @@ input[aria-invalid="true"] {
 }
 
 .panel-footer {
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
   margin: 20px -18px -18px;
   padding: 13px 18px;
   border-top: 1px solid var(--line);
   background: var(--surface-soft);
-}
-
-.footer-status {
-  gap: 6px;
-  font-size: 10px;
-}
-
-.footer-status.success {
-  color: #3c694d;
-}
-
-.footer-status.error {
-  color: var(--exclude);
 }
 
 .spinning {
