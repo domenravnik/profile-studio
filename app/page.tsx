@@ -3023,9 +3023,6 @@ export default function Home() {
                 <div className="annulus-strip-heading">
                   <div>
                     <strong>Unwrapped model input</strong>
-                    <span>
-                      Exact rectangular tiling · seam at left and right edge
-                    </span>
                   </div>
                   <span>
                     {processedWidth} × {processedHeight}
