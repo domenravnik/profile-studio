@@ -2271,14 +2271,6 @@ export default function Home() {
               <FileJson size={16} />
               Import profile
             </button>
-            <button
-              className="button button-primary"
-              type="button"
-              onClick={() => setStep("review")}
-            >
-              Review &amp; export
-              <ChevronRight size={16} />
-            </button>
           </div>
           {importMessage && (
             <div className="topbar-feedback">
