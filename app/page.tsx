@@ -94,6 +94,7 @@ type PolygonDraftHandle = {
 };
 
 const MASK_PREVIEW_MAX_DIMENSION = 640;
+const DEFAULT_MASK_NAME = "valid_region.png";
 
 const PolygonDraftLayer = forwardRef<
   PolygonDraftHandle,
@@ -616,7 +617,7 @@ export default function Home() {
   const [ellipseStart, setEllipseStart] = useState<Point | null>(null);
   const [ellipseCurrent, setEllipseCurrent] = useState<Point | null>(null);
   const [dragState, setDragState] = useState<DragState>(null);
-  const [maskName, setMaskName] = useState("roi.png");
+  const [maskName, setMaskName] = useState(DEFAULT_MASK_NAME);
   const [dynamicMin, setDynamicMin] = useState(400);
   const [dynamicMax, setDynamicMax] = useState(510);
   const [dynamicCenter, setDynamicCenter] = useState<Point>({
@@ -2121,7 +2122,7 @@ export default function Home() {
     if (regionMode === "static") {
       output.valid_region = {
         type: "mask",
-        path: maskName.trim() || `${slugify(profileName)}_roi.png`,
+        path: maskName.trim() || DEFAULT_MASK_NAME,
       };
     } else if (regionMode === "dynamic") {
       output.valid_region = {
@@ -2195,8 +2196,7 @@ export default function Home() {
     try {
       const zip = new JSZip();
       const resolvedProfileName = slugify(profileName);
-      const resolvedMaskName =
-        maskName.trim() || `${resolvedProfileName}_roi.png`;
+      const resolvedMaskName = maskName.trim() || DEFAULT_MASK_NAME;
       zip.file(
         `profiles/${resolvedProfileName}.json`,
         `${JSON.stringify(profile, null, 2)}\n`,
@@ -3237,7 +3237,6 @@ export default function Home() {
                         }
                       />
                     </div>
-                    {geometryIssue && <FieldMessage message={geometryIssue} />}
                   </div>
                   <div className="field-group">
                     <label className="field-label">Crop size</label>
@@ -3261,6 +3260,7 @@ export default function Home() {
                         }
                       />
                     </div>
+                    {geometryIssue && <FieldMessage message={geometryIssue} />}
                   </div>
                 </>
               )}
@@ -3345,8 +3345,8 @@ export default function Home() {
                         }}
                       />
                     </div>
+                    {geometryIssue && <FieldMessage message={geometryIssue} />}
                   </div>
-                  {geometryIssue && <FieldMessage message={geometryIssue} />}
                 </>
               )}
 
@@ -3645,12 +3645,12 @@ export default function Home() {
                     }}
                   />
                 </div>
+                {modelInputIssue && <FieldMessage message={modelInputIssue} />}
                 <div className="field-hint">
                   {tilingEnabled
                     ? "Every native tile is resized to this size."
                     : "The complete processed image is resized to this size."}
                 </div>
-                {modelInputIssue && <FieldMessage message={modelInputIssue} />}
               </div>
 
               <ToggleRow
@@ -3691,10 +3691,10 @@ export default function Home() {
                         }}
                       />
                     </div>
+                    {tileIssue && <FieldMessage message={tileIssue} />}
                     <div className="field-hint">
                       Pixels in the {processedWidth} × {processedHeight} processed image.
                     </div>
-                    {tileIssue && <FieldMessage message={tileIssue} />}
                   </div>
                   <div className="field-group">
                     <label className="field-label">Stride</label>
@@ -3893,7 +3893,7 @@ export default function Home() {
               )}
               {validation.some((check) => !check.ok) && (
                 <FieldMessage
-                  message={`Export is unavailable: ${validation.find((check) => !check.ok)?.label}`}
+                  message="Download is unavailable. Please review the validation errors above."
                 />
               )}
 

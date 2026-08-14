@@ -729,6 +729,11 @@ button:disabled {
   margin-bottom: 17px;
 }
 
+.section-block > .section-label,
+.section-block > .section-heading {
+  margin-bottom: 7px;
+}
+
 .field-label {
   display: flex;
   justify-content: space-between;
@@ -802,6 +807,10 @@ input[type="range"] {
   margin-top: 7px;
   font-size: 10px;
   line-height: 1.4;
+}
+
+.settings-content > .field-message {
+  margin-bottom: 17px;
 }
 
 .field-message svg {
@@ -1278,7 +1287,7 @@ input[aria-invalid="true"] {
 .json-preview {
   max-height: 220px;
   overflow: auto;
-  margin: 7px 0 0;
+  margin: 0;
   padding: 10px;
   border-radius: 8px;
   background: #202821;
