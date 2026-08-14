@@ -1042,7 +1042,7 @@ export default function Home() {
       id: crypto.randomUUID(),
       type: "polygon",
       operation,
-      name: `${operation === "include" ? "Inspection area" : "Excluded area"} ${shapes.length + 1}`,
+      name: `${operation === "include" ? "Included area" : "Excluded area"} ${shapes.length + 1}`,
       points: draftPolygon,
     };
     updateShapes([...shapes, nextShape]);
@@ -3251,16 +3251,6 @@ export default function Home() {
                       />
                     </div>
                   </div>
-                  <div className="derived-row">
-                    <span className="status-dot">
-                      <Check size={13} />
-                    </span>
-                    <div>
-                      <strong>Output restoration</strong>
-                      <span>Generated automatically from this crop</span>
-                    </div>
-                    <span className="derived-badge">Derived</span>
-                  </div>
                 </>
               )}
 
@@ -3552,9 +3542,6 @@ export default function Home() {
                       )}
                       onChange={(event) => setMaskName(event.target.value)}
                     />
-                    <div className="field-hint">
-                      Saved under dataset/valid_regions/
-                    </div>
                     {regionIssue && <FieldMessage message={regionIssue} />}
                   </div>
                 </>
@@ -3831,9 +3818,6 @@ export default function Home() {
                   aria-invalid={Boolean(profileNameIssue)}
                   onChange={(event) => setProfileName(event.target.value)}
                 />
-                <div className="field-hint">
-                  Exported as profiles/{slugify(profileName)}.json
-                </div>
                 {profileNameIssue ? (
                   <FieldMessage message={profileNameIssue} />
                 ) : profileName.trim() !== slugify(profileName) ? (
