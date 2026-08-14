@@ -85,6 +85,7 @@ type AnnulusGeometry = {
 };
 type ProcessedMask = { width: number; height: number; pixels: Uint8Array };
 type ValidationCheck = { ok: boolean; label: string; step: Step };
+type ContextMessage = { message: string; tone: "warning" | "error" };
 
 type PolygonDraftHandle = {
   addPoint: (point: Point) => void;
@@ -633,7 +634,10 @@ export default function Home() {
   const [artifactWidth, setArtifactWidth] = useState(1024);
   const [artifactHeight, setArtifactHeight] = useState(1024);
   const [exporting, setExporting] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<ContextMessage | null>(null);
+  const [importMessage, setImportMessage] = useState<ContextMessage | null>(null);
+  const [reviewMessage, setReviewMessage] = useState<ContextMessage | null>(null);
+  const [exportMessage, setExportMessage] = useState<ContextMessage | null>(null);
   const [processedMask, setProcessedMask] = useState<ProcessedMask | null>(null);
   const [staticMaskHasPixels, setStaticMaskHasPixels] = useState<boolean | null>(null);
   const [hoveredTileId, setHoveredTileId] = useState<number | null>(null);
@@ -649,6 +653,7 @@ export default function Home() {
   const stripCustomizedRef = useRef(false);
   const tilingCustomizedRef = useRef(false);
   const dynamicCustomizedRef = useRef(false);
+
   const modelInputCustomizedRef = useRef(false);
   const artifactCustomizedRef = useRef(false);
 
@@ -1521,12 +1526,12 @@ export default function Home() {
       setActiveSampleId(nextActive?.id ?? null);
     }
 
-    setNotice(`${removed.name} removed.`);
   };
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
+    setUploadMessage(null);
 
     let loaded: SampleImage[];
     try {
@@ -1554,7 +1559,13 @@ export default function Home() {
         ),
       );
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not read the selected images.");
+      setUploadMessage({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not read the selected images.",
+        tone: "error",
+      });
       event.target.value = "";
       return;
     }
@@ -1567,9 +1578,10 @@ export default function Home() {
     );
     if (!dimensionsMatch) {
       loaded.forEach((sample) => URL.revokeObjectURL(sample.url));
-      setNotice(
-        `All reference images must be ${expected.width} × ${expected.height}.`,
-      );
+      setUploadMessage({
+        message: "All reference images must have the same dimensions.",
+        tone: "error",
+      });
       event.target.value = "";
       return;
     }
@@ -1615,7 +1627,6 @@ export default function Home() {
       setRedoStack([]);
       setSelectedShapeId(null);
     }
-    setNotice(`${loaded.length} reference image${loaded.length === 1 ? "" : "s"} added.`);
     event.target.value = "";
   };
 
@@ -1624,6 +1635,8 @@ export default function Home() {
   ) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setImportMessage(null);
+    setReviewMessage(null);
     try {
       const parsed = JSON.parse(await file.text()) as unknown;
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -1732,20 +1745,24 @@ export default function Home() {
             : parseNumber(artifact.max_height, "artifact_size.max_height"),
         );
       }
-      setNotice(
-        validRegion?.type === "mask"
-          ? `Imported ${file.name}. Static mask drawings are not stored in profile JSON; redraw the inspection area before exporting.`
-          : `Imported ${file.name}.`,
-      );
+      if (validRegion?.type === "mask") {
+        setReviewMessage({
+          message:
+            "Static mask drawings are not stored in profile JSON; redraw the inspection area before exporting.",
+          tone: "warning",
+        });
+      }
       setStep("review");
     } catch (error) {
-      setNotice(
-        error instanceof SyntaxError
-          ? "That file contains malformed JSON."
-          : error instanceof Error
-            ? `Could not import profile: ${error.message}`
-            : "That file is not a valid profile JSON.",
-      );
+      setImportMessage({
+        message:
+          error instanceof SyntaxError
+            ? "That file contains malformed JSON."
+            : error instanceof Error
+              ? `Could not import profile: ${error.message}`
+              : "That file is not a valid profile JSON.",
+        tone: "error",
+      });
     }
     event.target.value = "";
   };
@@ -2175,10 +2192,10 @@ export default function Home() {
 
   const exportBundle = async () => {
     if (validation.some((check) => !check.ok)) {
-      setNotice("Resolve the blocking issues before exporting.");
       setStep("review");
       return;
     }
+    setExportMessage(null);
     setExporting(true);
     try {
       const zip = new JSZip();
@@ -2215,11 +2232,12 @@ export default function Home() {
       anchor.download = `${resolvedProfileName}-profile.zip`;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setNotice("Profile bundle exported.");
     } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Could not export the bundle.",
-      );
+      setExportMessage({
+        message:
+          error instanceof Error ? error.message : "Could not export the bundle.",
+        tone: "error",
+      });
     } finally {
       setExporting(false);
     }
@@ -2241,30 +2259,40 @@ export default function Home() {
             <div className="draft-status">{slugify(profileName)}</div>
           </div>
         </div>
-        <div className="topbar-actions">
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".json,application/json"
-            hidden
-            onChange={handleImportProfile}
-          />
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={() => importInputRef.current?.click()}
-          >
-            <FileJson size={16} />
-            Import profile
-          </button>
-          <button
-            className="button button-primary"
-            type="button"
-            onClick={() => setStep("review")}
-          >
-            Review &amp; export
-            <ChevronRight size={16} />
-          </button>
+        <div className="topbar-action-area">
+          <div className="topbar-actions">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              hidden
+              onChange={handleImportProfile}
+            />
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+            >
+              <FileJson size={16} />
+              Import profile
+            </button>
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={() => setStep("review")}
+            >
+              Review &amp; export
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          {importMessage && (
+            <div className="topbar-feedback">
+              <FieldMessage
+                message={importMessage.message}
+                tone={importMessage.tone}
+              />
+            </div>
+          )}
         </div>
       </header>
 
@@ -2287,20 +2315,6 @@ export default function Home() {
           );
         })}
       </nav>
-
-      {notice && (
-        <div className="notice" role="status">
-          <span>{notice}</span>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="Dismiss message"
-            onClick={() => setNotice(null)}
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
 
       <div className="workspace">
         <section className="editor-card">
@@ -3099,6 +3113,12 @@ export default function Home() {
                 <strong>Add reference images</strong>
                 <span>Select one or more · PNG, JPG, BMP, WebP or TIFF</span>
               </button>
+              {uploadMessage && (
+                <FieldMessage
+                  message={uploadMessage.message}
+                  tone={uploadMessage.tone}
+                />
+              )}
 
               <div className="section-block">
                 <div className="section-label">REFERENCE IMAGES</div>
@@ -3807,6 +3827,15 @@ export default function Home() {
 
           {step === "review" && (
             <div className="settings-content">
+              {reviewMessage && (
+                <div className="review-context-message">
+                  <FieldMessage
+                    message={reviewMessage.message}
+                    tone={reviewMessage.tone}
+                  />
+                </div>
+              )}
+
               <div className="field-group">
                 <label className="field-label" htmlFor="profile-name">
                   Profile name
@@ -3895,6 +3924,12 @@ export default function Home() {
                   </>
                 )}
               </button>
+              {exportMessage && (
+                <FieldMessage
+                  message={exportMessage.message}
+                  tone={exportMessage.tone}
+                />
+              )}
               {validation.some((check) => !check.ok) && (
                 <FieldMessage
                   message={`Export is unavailable: ${validation.find((check) => !check.ok)?.label}`}

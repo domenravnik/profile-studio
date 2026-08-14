@@ -72,7 +72,6 @@ button:disabled {
 .brand,
 .topbar-actions,
 .step-button,
-.notice,
 .drawing-toolbar,
 .sample-switcher,
 .panel-footer,
@@ -134,6 +133,21 @@ button:disabled {
 
 .topbar-actions {
   gap: 8px;
+}
+
+.topbar-action-area {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.topbar-feedback {
+  max-width: 430px;
+  text-align: left;
+}
+
+.topbar-feedback .field-message {
+  margin-top: 3px;
 }
 
 .button,
@@ -252,18 +266,6 @@ button:disabled {
 .step-button.active .step-index {
   background: var(--primary);
   color: #fff;
-}
-
-.notice {
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 0 12px;
-  padding: 9px 11px 9px 13px;
-  border: 1px solid #b9d0c0;
-  border-radius: 9px;
-  background: #edf5ef;
-  color: #2f5c42;
-  font-size: 13px;
 }
 
 .workspace {
@@ -814,6 +816,18 @@ input[type="range"] {
 
 .field-message.warning {
   color: #8a641d;
+}
+
+.review-context-message {
+  margin-bottom: 17px;
+  padding: 9px 10px;
+  border: 1px solid #ddc695;
+  border-radius: 8px;
+  background: #faf4e8;
+}
+
+.review-context-message .field-message {
+  margin-top: 0;
 }
 
 input[aria-invalid="true"] {
@@ -1379,6 +1393,14 @@ input[aria-invalid="true"] {
   .topbar-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topbar-action-area {
+    justify-items: stretch;
+  }
+
+  .topbar-feedback {
+    max-width: none;
   }
 
   .step-button {
