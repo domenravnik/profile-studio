@@ -1554,7 +1554,7 @@ export default function Home() {
                 });
               image.onerror = () => {
                 URL.revokeObjectURL(url);
-                reject(new Error(`Could not read ${file.name}. Choose a supported, valid image.`));
+                reject(new Error(`Could not read ${file.name}. Choose a supported file format.`));
               };
               image.src = url;
             }),
@@ -1750,7 +1750,7 @@ export default function Home() {
       if (validRegion?.type === "mask") {
         setReviewMessage({
           message:
-            "Static mask drawings are not stored in profile JSON; redraw the inspection area before exporting.",
+            "Static mask drawings are not stored in profile JSON. Redraw the inspection area before exporting.",
           tone: "warning",
         });
       }
@@ -1927,7 +1927,7 @@ export default function Home() {
       return "Mask filename cannot contain path separators.";
     }
     if (!maskName.toLowerCase().endsWith(".png")) {
-      return "Mask filename must end in .png.";
+      return "Mask filename must end with .png.";
     }
     return null;
   }, [
