@@ -3301,16 +3301,6 @@ export default function Home() {
                     <label className="field-label">Unwrapped strip</label>
                     <div className="field-pair">
                       <NumberField
-                        label="Height"
-                        value={annulusGeometry.stripHeight}
-                        min={1}
-                        invalid={Boolean(geometryIssue)}
-                        onChange={(stripHeight) => {
-                          stripCustomizedRef.current = true;
-                          setAnnulusGeometry((value) => ({ ...value, stripHeight }));
-                        }}
-                      />
-                      <NumberField
                         label="Width"
                         value={annulusGeometry.stripWidth}
                         min={1}
@@ -3318,6 +3308,16 @@ export default function Home() {
                         onChange={(stripWidth) => {
                           stripCustomizedRef.current = true;
                           setAnnulusGeometry((value) => ({ ...value, stripWidth }));
+                        }}
+                      />
+                      <NumberField
+                        label="Height"
+                        value={annulusGeometry.stripHeight}
+                        min={1}
+                        invalid={Boolean(geometryIssue)}
+                        onChange={(stripHeight) => {
+                          stripCustomizedRef.current = true;
+                          setAnnulusGeometry((value) => ({ ...value, stripHeight }));
                         }}
                       />
                     </div>
@@ -3601,16 +3601,6 @@ export default function Home() {
                 <label className="field-label">Model input</label>
                 <div className="field-pair">
                   <NumberField
-                    label="Height"
-                    value={inputHeight}
-                    min={1}
-                    invalid={Boolean(modelInputIssue)}
-                    onChange={(value) => {
-                      modelInputCustomizedRef.current = true;
-                      setInputHeight(value);
-                    }}
-                  />
-                  <NumberField
                     label="Width"
                     value={inputWidth}
                     min={1}
@@ -3618,6 +3608,16 @@ export default function Home() {
                     onChange={(value) => {
                       modelInputCustomizedRef.current = true;
                       setInputWidth(value);
+                    }}
+                  />
+                  <NumberField
+                    label="Height"
+                    value={inputHeight}
+                    min={1}
+                    invalid={Boolean(modelInputIssue)}
+                    onChange={(value) => {
+                      modelInputCustomizedRef.current = true;
+                      setInputHeight(value);
                     }}
                   />
                 </div>
@@ -3647,16 +3647,6 @@ export default function Home() {
                     <label className="field-label">Native tile coverage</label>
                     <div className="field-pair">
                       <NumberField
-                        label="Height"
-                        value={tileHeight}
-                        min={1}
-                        invalid={Boolean(tileIssue)}
-                        onChange={(value) => {
-                          tilingCustomizedRef.current = true;
-                          setTileHeight(value);
-                        }}
-                      />
-                      <NumberField
                         label="Width"
                         value={tileWidth}
                         min={1}
@@ -3664,6 +3654,16 @@ export default function Home() {
                         onChange={(value) => {
                           tilingCustomizedRef.current = true;
                           setTileWidth(value);
+                        }}
+                      />
+                      <NumberField
+                        label="Height"
+                        value={tileHeight}
+                        min={1}
+                        invalid={Boolean(tileIssue)}
+                        onChange={(value) => {
+                          tilingCustomizedRef.current = true;
+                          setTileHeight(value);
                         }}
                       />
                     </div>
@@ -3676,16 +3676,6 @@ export default function Home() {
                     <label className="field-label">Stride</label>
                     <div className="field-pair">
                       <NumberField
-                        label="Height"
-                        value={strideHeight}
-                        min={1}
-                        invalid={Boolean(strideIssue)}
-                        onChange={(value) => {
-                          tilingCustomizedRef.current = true;
-                          setStrideHeight(value);
-                        }}
-                      />
-                      <NumberField
                         label="Width"
                         value={strideWidth}
                         min={1}
@@ -3693,6 +3683,16 @@ export default function Home() {
                         onChange={(value) => {
                           tilingCustomizedRef.current = true;
                           setStrideWidth(value);
+                        }}
+                      />
+                      <NumberField
+                        label="Height"
+                        value={strideHeight}
+                        min={1}
+                        invalid={Boolean(strideIssue)}
+                        onChange={(value) => {
+                          tilingCustomizedRef.current = true;
+                          setStrideHeight(value);
                         }}
                       />
                     </div>
