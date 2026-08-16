@@ -12,8 +12,8 @@ settings, then download the files needed by the detector.
 - Configure dynamic ellipse localization.
 - Preview native post-geometry tiling and exact static-ROI coverage with the 30% inclusion threshold.
 - Import an existing profile JSON.
-- Validate settings and download a ZIP containing the detector profile, an
-  optional static mask, and simple installation instructions.
+- Validate settings and download a ZIP containing the detector profile and an
+  optional static mask.
 - Keep drafts in browser storage; uploaded images remain local to the browser.
 
 ## Run locally
@@ -36,12 +36,11 @@ npm run start
 
 ## Exported files
 
-Every export contains the detector profile and a short README:
+Every export contains the detector profile:
 
 ```text
 <profile-name>.zip
-├── profiles/<profile-name>.json
-└── README.txt
+└── profiles/<profile-name>.json
 ```
 
 Profiles that use a static valid region also contain its mask:
@@ -52,7 +51,6 @@ dataset/valid_regions/<mask-name>.png
 
 Copy the profile JSON into the detector's `PROFILES_ROOT`. For a static valid
 region, also copy the mask into the target dataset's `valid_regions` directory.
-The included `README.txt` repeats these paths for the exported profile.
 
 The optional mask is an 8-bit, source-resolution PNG containing only black and
 white pixels. White pixels are the usable part of the configured geometry and

@@ -2207,20 +2207,6 @@ export default function Home() {
         zip.file(`dataset/valid_regions/${resolvedMaskName}`, await drawMask());
       }
 
-      zip.file(
-        "README.txt",
-        [
-          "PROFILE STUDIO EXPORT",
-          "",
-          `Copy profiles/${resolvedProfileName}.json into PROFILES_ROOT.`,
-          regionMode === "static"
-            ? `Copy dataset/valid_regions/${resolvedMaskName} into the dataset's valid_regions directory.`
-            : "This profile does not require a static mask file.",
-          "",
-          "Keep the JSON filename identical to the profile name.",
-        ].join("\n"),
-      );
-
       const bundle = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(bundle);
       const anchor = document.createElement("a");
