@@ -2055,6 +2055,9 @@ export default function Home() {
       const artifacts = data.artifacts === undefined
         ? undefined
         : parseObject(data.artifacts, "artifacts");
+      if (artifacts && (Object.keys(artifacts).length !== 1 || !("size" in artifacts))) {
+        throw new Error("artifacts must contain only size.");
+      }
       const artifact = artifacts === undefined
         ? undefined
         : parseObject(artifacts.size, "artifacts.size");
@@ -2393,9 +2396,9 @@ export default function Home() {
   const artifactIssue = !artifactEnabled
     ? null
     : ![artifactWidth, artifactHeight].every(Number.isInteger)
-      ? "Artifact maximum dimensions must be whole pixels."
+      ? "Output image maximum dimensions must be whole pixels."
       : artifactWidth <= 0 || artifactHeight <= 0
-        ? "Artifact maximum dimensions must be greater than zero."
+        ? "Output image maximum dimensions must be greater than zero."
         : null;
   const profileNameIssue = !profileName.trim()
     ? "Profile name is required."
@@ -2460,7 +2463,7 @@ export default function Home() {
     if (artifactEnabled) {
       checks.push({
         ok: !artifactIssue,
-        label: artifactIssue ?? "Artifact maximum size is valid",
+        label: artifactIssue ?? "Output image maximum size is valid",
         step: "model",
       });
     }
@@ -4242,12 +4245,12 @@ export default function Home() {
                 checked={artifactEnabled}
                 onChange={setArtifactEnabled}
                 icon={<Scaling size={16} />}
-                title="Limit artifact size"
+                title="Limit output image size"
                 detail="Preserves aspect ratio"
               />
               {artifactEnabled && (
                 <div className="field-group">
-                  <label className="field-label">Artifact maximum</label>
+                  <label className="field-label">Output image maximum</label>
                   <div className="field-pair">
                     <NumberField
                       label="Width"
