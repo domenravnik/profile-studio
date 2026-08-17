@@ -4226,7 +4226,7 @@ export default function Home() {
                     </div>
                     {strideIssue && <FieldMessage message={strideIssue} />}
                     <div className="field-hint">
-                      Equal to tile size gives no overlap; smaller values create overlapping tiles.
+                      Equal to tile size gives no overlap. Smaller values create overlapping tiles.
                     </div>
                   </div>
                   <div className="tile-legend">
