@@ -16,6 +16,9 @@ settings, then download the files needed by the detector.
   optional static mask.
 - Keep drafts in browser storage; uploaded images remain local to the browser.
 
+Profile JSON uses named geometry objects: sizes contain `width` and `height`, positions contain `x` and `y`,
+annulus radii contain `inner` and `outer`, and ranges contain `min` and `max`.
+
 ## Run locally
 
 Requires Node.js 22.13 or newer.

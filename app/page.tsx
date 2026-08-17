@@ -297,17 +297,6 @@ const recommendedAnnulusInput = (width: number, height: number) => {
   };
 };
 
-const parseNumberPair = (value: unknown, label: string): [number, number] => {
-  if (
-    !Array.isArray(value) ||
-    value.length !== 2 ||
-    !value.every((item) => typeof item === "number" && Number.isFinite(item))
-  ) {
-    throw new Error(`${label} must contain exactly two numbers.`);
-  }
-  return [value[0] as number, value[1] as number];
-};
-
 const parseObject = (value: unknown, label: string): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object.`);
@@ -320,6 +309,28 @@ const parseNumber = (value: unknown, label: string): number => {
     throw new Error(`${label} must be a number.`);
   }
   return value;
+};
+
+const parseNamedNumberPair = (
+  value: unknown,
+  label: string,
+  firstKey: string,
+  secondKey: string,
+): [number, number] => {
+  const data = parseObject(value, label);
+  const expectedKeys = new Set([firstKey, secondKey]);
+  const missingKey = [firstKey, secondKey].find((key) => !(key in data));
+  if (missingKey) {
+    throw new Error(`${label}.${missingKey} is required.`);
+  }
+  const unexpectedKey = Object.keys(data).find((key) => !expectedKeys.has(key));
+  if (unexpectedKey) {
+    throw new Error(`${label}.${unexpectedKey} is not supported.`);
+  }
+  return [
+    parseNumber(data[firstKey], `${label}.${firstKey}`),
+    parseNumber(data[secondKey], `${label}.${secondKey}`),
+  ];
 };
 
 const polarPoint = (cx: number, cy: number, radius: number, angle: number) => ({
@@ -592,6 +603,10 @@ export default function Home() {
   const [profileName, setProfileName] = useState("new_profile");
   const [samples, setSamples] = useState<SampleImage[]>([]);
   const [activeSampleId, setActiveSampleId] = useState<string | null>(null);
+  const [fallbackSourceSize, setFallbackSourceSize] = useState({
+    width: DEFAULT_CANVAS_WIDTH,
+    height: DEFAULT_CANVAS_HEIGHT,
+  });
   const [geometryMode, setGeometryMode] = useState<GeometryMode>("crop");
   const [cropGeometry, setCropGeometry] = useState<CropGeometry>({
     x: 549,
@@ -661,8 +676,8 @@ export default function Home() {
 
   const activeSample =
     samples.find((sample) => sample.id === activeSampleId) ?? samples[0] ?? null;
-  const sourceWidth = activeSample?.width ?? DEFAULT_CANVAS_WIDTH;
-  const sourceHeight = activeSample?.height ?? DEFAULT_CANVAS_HEIGHT;
+  const sourceWidth = activeSample?.width ?? fallbackSourceSize.width;
+  const sourceHeight = activeSample?.height ?? fallbackSourceSize.height;
   const processedWidth = Math.max(
     1,
     safeInteger(
@@ -1591,6 +1606,7 @@ export default function Home() {
     setSamples((current) => [...current, ...loaded]);
     setActiveSampleId(first.id);
     if (!samples.length) {
+      setFallbackSourceSize({ width: first.width, height: first.height });
       const cropWidth = Math.max(1, Math.round(first.width * 0.62));
       const cropHeight = Math.max(1, Math.round(first.height * 0.72));
       setCropGeometry({
@@ -1648,13 +1664,22 @@ export default function Home() {
       if (typeof data.name !== "string") {
         throw new Error("name must be a string.");
       }
-      const importedInputSize = parseNumberPair(data.input_size, "input_size");
+      const [inputWidthValue, inputHeightValue] = parseNamedNumberPair(
+        data.input_size,
+        "input_size",
+        "width",
+        "height",
+      );
       modelInputCustomizedRef.current = true;
       stripCustomizedRef.current = false;
       dynamicCustomizedRef.current = false;
       setProfileName(data.name);
-      setInputHeight(importedInputSize[0]);
-      setInputWidth(importedInputSize[1]);
+      setInputHeight(inputHeightValue);
+      setInputWidth(inputWidthValue);
+      setFallbackSourceSize({
+        width: DEFAULT_CANVAS_WIDTH,
+        height: DEFAULT_CANVAS_HEIGHT,
+      });
 
       if (data.preprocess_steps !== undefined && !Array.isArray(data.preprocess_steps)) {
         throw new Error("preprocess_steps must be an array.");
@@ -1673,22 +1698,70 @@ export default function Home() {
         });
       } else if (firstStepObject?.name === "annulus_unwrap") {
         const params = parseObject(firstStepObject.params, "annulus_unwrap params");
-        const center = parseNumberPair(params.center, "annulus center");
-        const stripSize = parseNumberPair(params.strip_size, "annulus strip_size");
+        const [centerX, centerY] = parseNamedNumberPair(
+          params.center,
+          "annulus center",
+          "x",
+          "y",
+        );
+        const [innerRadius, outerRadius] = parseNamedNumberPair(
+          params.radii,
+          "annulus radii",
+          "inner",
+          "outer",
+        );
+        const [stripWidth, stripHeight] = parseNamedNumberPair(
+          params.strip_size,
+          "annulus strip_size",
+          "width",
+          "height",
+        );
         setGeometryMode("annulus");
         setAnnulusGeometry({
-          cx: center[0],
-          cy: center[1],
-          innerRadius: parseNumber(params.inner_radius, "annulus inner_radius"),
-          outerRadius: parseNumber(params.outer_radius, "annulus outer_radius"),
-          stripHeight: stripSize[0],
-          stripWidth: stripSize[1],
+          cx: centerX,
+          cy: centerY,
+          innerRadius,
+          outerRadius,
+          stripHeight,
+          stripWidth,
         });
         stripCustomizedRef.current = true;
       } else if (firstStepObject) {
         throw new Error(`Unsupported first preprocessing step: ${String(firstStepObject.name)}.`);
       } else {
         setGeometryMode("full");
+      }
+
+      if (data.postprocess_steps !== undefined && !Array.isArray(data.postprocess_steps)) {
+        throw new Error("postprocess_steps must be an array.");
+      }
+      const postprocess = (data.postprocess_steps ?? []) as unknown[];
+      const lastStep = postprocess.at(-1);
+      const lastStepObject = lastStep === undefined
+        ? undefined
+        : parseObject(lastStep, `postprocess_steps[${postprocess.length - 1}]`);
+      if (lastStepObject?.name === "crop_restore") {
+        const params = parseObject(lastStepObject.params, "crop_restore params");
+        const [imageWidth, imageHeight] = parseNamedNumberPair(
+          params.image_size,
+          "crop_restore image_size",
+          "width",
+          "height",
+        );
+        setFallbackSourceSize({ width: imageWidth, height: imageHeight });
+      } else if (lastStepObject?.name === "annulus_wrap") {
+        const params = parseObject(lastStepObject.params, "annulus_wrap params");
+        parseNamedNumberPair(params.center, "annulus_wrap center", "x", "y");
+        parseNamedNumberPair(params.radii, "annulus_wrap radii", "inner", "outer");
+        const [imageWidth, imageHeight] = parseNamedNumberPair(
+          params.image_size,
+          "annulus_wrap image_size",
+          "width",
+          "height",
+        );
+        setFallbackSourceSize({ width: imageWidth, height: imageHeight });
+      } else if (lastStepObject) {
+        throw new Error(`Unsupported last postprocessing step: ${String(lastStepObject.name)}.`);
       }
 
       const validRegion = data.valid_region === undefined
@@ -1698,9 +1771,14 @@ export default function Home() {
       else if (validRegion.type === "ellipse") {
         dynamicCustomizedRef.current = true;
         setRegionMode("dynamic");
-        const range = parseNumberPair(validRegion.diameter_range, "valid_region.diameter_range");
-        setDynamicMin(range[0]);
-        setDynamicMax(range[1]);
+        const [minimumDiameter, maximumDiameter] = parseNamedNumberPair(
+          validRegion.diameter,
+          "valid_region.diameter",
+          "min",
+          "max",
+        );
+        setDynamicMin(minimumDiameter);
+        setDynamicMax(maximumDiameter);
       } else if (validRegion.type === "mask") {
         if (typeof validRegion.path !== "string" || !validRegion.path.trim()) {
           throw new Error("valid_region.path must be a non-empty string.");
@@ -1719,12 +1797,22 @@ export default function Home() {
       tilingCustomizedRef.current = Boolean(tiling);
       setTilingEnabled(Boolean(tiling));
       if (tiling) {
-        const tileSize = parseNumberPair(tiling.tile_size, "tiling.tile_size");
-        const stride = parseNumberPair(tiling.stride, "tiling.stride");
-        setTileHeight(tileSize[0]);
-        setTileWidth(tileSize[1]);
-        setStrideHeight(stride[0]);
-        setStrideWidth(stride[1]);
+        const [tileWidthValue, tileHeightValue] = parseNamedNumberPair(
+          tiling.tile_size,
+          "tiling.tile_size",
+          "width",
+          "height",
+        );
+        const [strideX, strideY] = parseNamedNumberPair(
+          tiling.stride,
+          "tiling.stride",
+          "x",
+          "y",
+        );
+        setTileHeight(tileHeightValue);
+        setTileWidth(tileWidthValue);
+        setStrideHeight(strideY);
+        setStrideWidth(strideX);
       }
 
       const artifact = data.artifact_size === undefined
@@ -2064,7 +2152,10 @@ export default function Home() {
       name: slugify(profileName),
       preprocess_steps: [],
       postprocess_steps: [],
-      input_size: [safeInteger(inputHeight), safeInteger(inputWidth)],
+      input_size: {
+        width: safeInteger(inputWidth),
+        height: safeInteger(inputHeight),
+      },
     };
 
     if (geometryMode === "crop") {
@@ -2083,7 +2174,10 @@ export default function Home() {
         {
           name: "crop_restore",
           params: {
-            image_size: [sourceHeight, sourceWidth],
+            image_size: {
+              width: sourceWidth,
+              height: sourceHeight,
+            },
             x: safeInteger(cropGeometry.x),
             y: safeInteger(cropGeometry.y),
             width: safeInteger(cropGeometry.width),
@@ -2093,19 +2187,24 @@ export default function Home() {
       ];
     } else if (geometryMode === "annulus") {
       const geometry = {
-        center: [safeInteger(annulusGeometry.cx), safeInteger(annulusGeometry.cy)],
-        inner_radius: safeInteger(annulusGeometry.innerRadius),
-        outer_radius: safeInteger(annulusGeometry.outerRadius),
+        center: {
+          x: safeInteger(annulusGeometry.cx),
+          y: safeInteger(annulusGeometry.cy),
+        },
+        radii: {
+          inner: safeInteger(annulusGeometry.innerRadius),
+          outer: safeInteger(annulusGeometry.outerRadius),
+        },
       };
       output.preprocess_steps = [
         {
           name: "annulus_unwrap",
           params: {
             ...geometry,
-            strip_size: [
-              safeInteger(annulusGeometry.stripHeight),
-              safeInteger(annulusGeometry.stripWidth),
-            ],
+            strip_size: {
+              width: safeInteger(annulusGeometry.stripWidth),
+              height: safeInteger(annulusGeometry.stripHeight),
+            },
           },
         },
       ];
@@ -2114,7 +2213,10 @@ export default function Home() {
           name: "annulus_wrap",
           params: {
             ...geometry,
-            image_size: [sourceHeight, sourceWidth],
+            image_size: {
+              width: sourceWidth,
+              height: sourceHeight,
+            },
           },
         },
       ];
@@ -2128,14 +2230,23 @@ export default function Home() {
     } else if (regionMode === "dynamic") {
       output.valid_region = {
         type: "ellipse",
-        diameter_range: [safeInteger(dynamicMin), safeInteger(dynamicMax)],
+        diameter: {
+          min: safeInteger(dynamicMin),
+          max: safeInteger(dynamicMax),
+        },
       };
     }
 
     if (tilingEnabled) {
       output.tiling = {
-        tile_size: [safeInteger(tileHeight), safeInteger(tileWidth)],
-        stride: [safeInteger(strideHeight), safeInteger(strideWidth)],
+        tile_size: {
+          width: safeInteger(tileWidth),
+          height: safeInteger(tileHeight),
+        },
+        stride: {
+          x: safeInteger(strideWidth),
+          y: safeInteger(strideHeight),
+        },
       };
     }
 
