@@ -8,6 +8,7 @@ import {
   Crop,
   Download,
   FileJson,
+  FolderArchive,
   Grid3X3,
   Hexagon,
   Image as ImageIcon,
@@ -889,7 +890,8 @@ export default function Home() {
   const [hoveredTileId, setHoveredTileId] = useState<number | null>(null);
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const importInputRef = useRef<HTMLInputElement>(null);
+  const projectInputRef = useRef<HTMLInputElement>(null);
+  const profileInputRef = useRef<HTMLInputElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const maskPreviewRef = useRef<HTMLCanvasElement>(null);
   const processedPreviewRef = useRef<HTMLCanvasElement>(null);
@@ -2060,7 +2062,7 @@ export default function Home() {
       setStep("review");
   };
 
-  const handleImportProfile = async (
+  const handleImport = async (
     event: ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0];
@@ -2733,19 +2735,34 @@ export default function Home() {
         <div className="topbar-action-area">
           <div className="topbar-actions">
             <input
-              ref={importInputRef}
+              ref={projectInputRef}
               type="file"
-              accept=".json,.zip,application/json,application/zip"
+              accept=".zip,application/zip"
               hidden
-              onChange={handleImportProfile}
+              onChange={handleImport}
+            />
+            <input
+              ref={profileInputRef}
+              type="file"
+              accept=".json,application/json"
+              hidden
+              onChange={handleImport}
             />
             <button
               className="button button-secondary"
               type="button"
-              onClick={() => importInputRef.current?.click()}
+              onClick={() => projectInputRef.current?.click()}
+            >
+              <FolderArchive size={16} />
+              Open project
+            </button>
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={() => profileInputRef.current?.click()}
             >
               <FileJson size={16} />
-              Import profile or project
+              Import profile
             </button>
           </div>
           {importMessage && (
