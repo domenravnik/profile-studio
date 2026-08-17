@@ -116,6 +116,8 @@ type AnnulusGeometry = {
 type ProcessedMask = { width: number; height: number; pixels: Uint8Array };
 type ValidationCheck = { ok: boolean; label: string; step: Step };
 type ContextMessage = { message: string; tone: "warning" | "error" };
+type ImportSource = "project" | "profile";
+type ImportMessage = ContextMessage & { source: ImportSource };
 
 type PolygonDraftHandle = {
   addPoint: (point: Point) => void;
@@ -883,7 +885,7 @@ export default function Home() {
   const [artifactHeight, setArtifactHeight] = useState(1024);
   const [exporting, setExporting] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<ContextMessage | null>(null);
-  const [importMessage, setImportMessage] = useState<ContextMessage | null>(null);
+  const [importMessage, setImportMessage] = useState<ImportMessage | null>(null);
   const [exportMessage, setExportMessage] = useState<ContextMessage | null>(null);
   const [staticMaskNeedsRedraw, setStaticMaskNeedsRedraw] = useState(false);
   const [processedMask, setProcessedMask] = useState<ProcessedMask | null>(null);
@@ -2085,6 +2087,8 @@ export default function Home() {
   const handleImport = async (
     event: ChangeEvent<HTMLInputElement>,
   ) => {
+    const importSource: ImportSource =
+      event.currentTarget === projectInputRef.current ? "project" : "profile";
     const file = event.target.files?.[0];
     if (!file) return;
     setImportMessage(null);
@@ -2178,14 +2182,17 @@ export default function Home() {
       importedSamples = [];
     } catch (error) {
       importedSamples.forEach((sample) => URL.revokeObjectURL(sample.url));
+      const action =
+        importSource === "project" ? "open project" : "import profile";
       setImportMessage({
         message:
           error instanceof SyntaxError
-            ? "The selected file contains malformed JSON."
+            ? `Couldn’t ${action}: The selected file contains malformed JSON.`
             : error instanceof Error
-              ? `Could not import profile or project: ${error.message}`
-              : "That file is not a valid profile or Studio project.",
+              ? `Couldn’t ${action}: ${error.message}`
+              : `Couldn’t ${action}: The selected file is not valid.`,
         tone: "error",
+        source: importSource,
       });
     } finally {
       event.target.value = "";
@@ -2755,6 +2762,22 @@ export default function Home() {
           </div>
         </div>
         <div className="topbar-action-area">
+          {importMessage && (
+            <div id="topbar-import-error" className="topbar-feedback">
+              <FieldMessage
+                message={importMessage.message}
+                tone={importMessage.tone}
+              />
+              <button
+                className="topbar-feedback-dismiss"
+                type="button"
+                aria-label="Dismiss import error"
+                onClick={() => setImportMessage(null)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
           <div className="topbar-actions">
             <input
               ref={projectInputRef}
@@ -2773,7 +2796,15 @@ export default function Home() {
             <button
               className="button button-secondary"
               type="button"
-              onClick={() => projectInputRef.current?.click()}
+              aria-describedby={
+                importMessage?.source === "project"
+                  ? "topbar-import-error"
+                  : undefined
+              }
+              onClick={() => {
+                setImportMessage(null);
+                projectInputRef.current?.click();
+              }}
             >
               <FolderArchive size={16} />
               Open project
@@ -2781,20 +2812,20 @@ export default function Home() {
             <button
               className="button button-secondary"
               type="button"
-              onClick={() => profileInputRef.current?.click()}
+              aria-describedby={
+                importMessage?.source === "profile"
+                  ? "topbar-import-error"
+                  : undefined
+              }
+              onClick={() => {
+                setImportMessage(null);
+                profileInputRef.current?.click();
+              }}
             >
               <FileJson size={16} />
               Import profile
             </button>
           </div>
-          {importMessage && (
-            <div className="topbar-feedback">
-              <FieldMessage
-                message={importMessage.message}
-                tone={importMessage.tone}
-              />
-            </div>
-          )}
         </div>
       </header>
 

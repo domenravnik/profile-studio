@@ -135,18 +135,54 @@ button:disabled {
 }
 
 .topbar-action-area {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .topbar-feedback {
-  max-width: 430px;
+  display: flex;
+  max-width: 420px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 7px 7px 9px;
+  border: 1px solid rgba(186, 98, 87, 0.28);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
   text-align: left;
 }
 
 .topbar-feedback .field-message {
-  margin-top: 3px;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  margin-top: 0;
+}
+
+.topbar-feedback .field-message svg {
+  margin-top: 0;
+}
+
+.topbar-feedback-dismiss {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.topbar-feedback-dismiss:hover {
+  background: var(--surface-strong);
+  color: var(--text);
 }
 
 .button,
@@ -1391,10 +1427,16 @@ input[aria-invalid="true"] {
   }
 
   .topbar-action-area {
-    justify-items: stretch;
+    display: grid;
+    gap: 8px;
+  }
+
+  .topbar-actions {
+    grid-row: 1;
   }
 
   .topbar-feedback {
+    grid-row: 2;
     max-width: none;
   }
 
