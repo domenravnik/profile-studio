@@ -17,6 +17,7 @@ import {
   MousePointer2,
   Redo2,
   RotateCcw,
+  Scaling,
   Trash2,
   Undo2,
   Upload,
@@ -4222,7 +4223,7 @@ export default function Home() {
               <ToggleRow
                 checked={artifactEnabled}
                 onChange={setArtifactEnabled}
-                icon={<ImageIcon size={16} />}
+                icon={<Scaling size={16} />}
                 title="Limit artifact size"
                 detail="Preserves aspect ratio"
               />
