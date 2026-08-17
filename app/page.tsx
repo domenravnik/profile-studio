@@ -1885,12 +1885,25 @@ export default function Home() {
         throw new Error("Profile JSON must contain an object at the top level.");
       }
       const data = parsed as Record<string, unknown>;
+      const supportedFields = new Set([
+        "name",
+        "model_input_size",
+        "preprocess_steps",
+        "postprocess_steps",
+        "tiling",
+        "valid_region",
+        "artifacts",
+      ]);
+      const unsupportedField = Object.keys(data).find((key) => !supportedFields.has(key));
+      if (unsupportedField) {
+        throw new Error(`${unsupportedField} is not a supported profile field.`);
+      }
       if (typeof data.name !== "string") {
         throw new Error("name must be a string.");
       }
       const [inputWidthValue, inputHeightValue] = parseNamedNumberPair(
-        data.input_size,
-        "input_size",
+        data.model_input_size,
+        "model_input_size",
         "width",
         "height",
       );
@@ -2039,24 +2052,27 @@ export default function Home() {
         setStrideWidth(strideX);
       }
 
-      const artifact = data.artifact_size === undefined
+      const artifacts = data.artifacts === undefined
         ? undefined
-        : parseObject(data.artifact_size, "artifact_size");
+        : parseObject(data.artifacts, "artifacts");
+      const artifact = artifacts === undefined
+        ? undefined
+        : parseObject(artifacts.size, "artifacts.size");
       setArtifactEnabled(Boolean(artifact));
       artifactCustomizedRef.current = Boolean(artifact);
       if (artifact) {
         if (artifact.max_width === undefined && artifact.max_height === undefined) {
-          throw new Error("artifact_size must define max_width or max_height.");
+          throw new Error("artifacts.size must define max_width or max_height.");
         }
         setArtifactWidth(
           artifact.max_width === undefined
             ? 1024
-            : parseNumber(artifact.max_width, "artifact_size.max_width"),
+            : parseNumber(artifact.max_width, "artifacts.size.max_width"),
         );
         setArtifactHeight(
           artifact.max_height === undefined
             ? 1024
-            : parseNumber(artifact.max_height, "artifact_size.max_height"),
+            : parseNumber(artifact.max_height, "artifacts.size.max_height"),
         );
       }
       setStaticMaskNeedsRedraw(validRegion?.type === "mask");
@@ -2478,7 +2494,7 @@ export default function Home() {
       name: slugify(profileName),
       preprocess_steps: [],
       postprocess_steps: [],
-      input_size: {
+      model_input_size: {
         width: safeInteger(inputWidth),
         height: safeInteger(inputHeight),
       },
@@ -2577,9 +2593,11 @@ export default function Home() {
     }
 
     if (artifactEnabled) {
-      output.artifact_size = {
-        max_width: safeInteger(artifactWidth),
-        max_height: safeInteger(artifactHeight),
+      output.artifacts = {
+        size: {
+          max_width: safeInteger(artifactWidth),
+          max_height: safeInteger(artifactHeight),
+        },
       };
     }
     return output;

@@ -70,4 +70,4 @@ regions are detected for each image and therefore do not export a mask.
 
 When tiling is enabled, `tile_size` and `stride` are measured in the native
 processed image (full image, crop, or unwrapped annulus). Every included tile is
-then resized independently to `input_size` for PatchCore.
+then resized independently to `model_input_size` for PatchCore.
