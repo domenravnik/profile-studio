@@ -653,8 +653,8 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<ContextMessage | null>(null);
   const [importMessage, setImportMessage] = useState<ContextMessage | null>(null);
-  const [reviewMessage, setReviewMessage] = useState<ContextMessage | null>(null);
   const [exportMessage, setExportMessage] = useState<ContextMessage | null>(null);
+  const [staticMaskNeedsRedraw, setStaticMaskNeedsRedraw] = useState(false);
   const [processedMask, setProcessedMask] = useState<ProcessedMask | null>(null);
   const [staticMaskHasPixels, setStaticMaskHasPixels] = useState<boolean | null>(null);
   const [hoveredTileId, setHoveredTileId] = useState<number | null>(null);
@@ -1654,7 +1654,6 @@ export default function Home() {
     const file = event.target.files?.[0];
     if (!file) return;
     setImportMessage(null);
-    setReviewMessage(null);
     try {
       const parsed = JSON.parse(await file.text()) as unknown;
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -1835,13 +1834,7 @@ export default function Home() {
             : parseNumber(artifact.max_height, "artifact_size.max_height"),
         );
       }
-      if (validRegion?.type === "mask") {
-        setReviewMessage({
-          message:
-            "Static mask drawings are not stored in profile JSON. Redraw the inspection area before exporting.",
-          tone: "warning",
-        });
-      }
+      setStaticMaskNeedsRedraw(validRegion?.type === "mask");
       setStep("review");
     } catch (error) {
       setImportMessage({
@@ -2072,6 +2065,16 @@ export default function Home() {
       : profileName.includes("/") || profileName.includes("\\")
         ? "Profile name cannot contain path separators."
         : null;
+  const reviewMessage: ContextMessage | null =
+    staticMaskNeedsRedraw &&
+    regionMode === "static" &&
+    !shapes.some((shape) => shape.operation === "include")
+      ? {
+          message:
+            "Static mask drawings are not stored in profile JSON. Redraw the inspection area before exporting.",
+          tone: "warning",
+        }
+      : null;
 
   const validation = useMemo(() => {
     const checks: ValidationCheck[] = [];
