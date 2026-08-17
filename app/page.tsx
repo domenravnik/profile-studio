@@ -3826,7 +3826,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="field-group">
-                    <label className="field-label">Unwrapped strip</label>
+                    <label className="field-label">Unwrapped strip size</label>
                     <div className="field-pair">
                       <NumberField
                         label="Width"
@@ -4126,7 +4126,7 @@ export default function Home() {
           {step === "model" && (
             <div className="settings-content">
               <div className="field-group">
-                <label className="field-label">Model input</label>
+                <label className="field-label">Model input size</label>
                 <div className="field-pair">
                   <NumberField
                     label="Width"
@@ -4172,7 +4172,7 @@ export default function Home() {
               {tilingEnabled && (
                 <>
                   <div className="field-group">
-                    <label className="field-label">Native tile coverage</label>
+                    <label className="field-label">Tile size</label>
                     <div className="field-pair">
                       <NumberField
                         label="Width"
@@ -4250,7 +4250,7 @@ export default function Home() {
               />
               {artifactEnabled && (
                 <div className="field-group">
-                  <label className="field-label">Output image maximum</label>
+                  <label className="field-label">Output image maximum size</label>
                   <div className="field-pair">
                     <NumberField
                       label="Width"
