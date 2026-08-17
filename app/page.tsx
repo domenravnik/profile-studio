@@ -71,6 +71,33 @@ type SampleImage = {
   bytes: number;
 };
 
+type ProjectReference = {
+  id: string;
+  name: string;
+  path: string;
+  mediaType: string;
+  width: number;
+  height: number;
+  bytes: number;
+};
+
+type StudioProject = {
+  profilePath: string;
+  sourceSize: { width: number; height: number };
+  references: ProjectReference[];
+  activeReferenceId: string | null;
+  shapes: RoiShape[];
+  dynamicCenter: Point;
+  step: Step;
+  customized: {
+    strip: boolean;
+    tiling: boolean;
+    dynamic: boolean;
+    modelInput: boolean;
+    artifact: boolean;
+  };
+};
+
 type CropGeometry = { x: number; y: number; width: number; height: number };
 type CropCorner = "north-west" | "north-east" | "south-west" | "south-east";
 type AnnulusControl = "move" | "inner-radius" | "outer-radius";
@@ -311,6 +338,14 @@ const parseNumber = (value: unknown, label: string): number => {
   return value;
 };
 
+const parsePositiveInteger = (value: unknown, label: string): number => {
+  const number = parseNumber(value, label);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`${label} must be a positive whole number.`);
+  }
+  return number;
+};
+
 const parseNamedNumberPair = (
   value: unknown,
   label: string,
@@ -332,6 +367,200 @@ const parseNamedNumberPair = (
     parseNumber(data[secondKey], `${label}.${secondKey}`),
   ];
 };
+
+const parseString = (value: unknown, label: string): string => {
+  if (typeof value !== "string" || !value) {
+    throw new Error(`${label} must be a non-empty string.`);
+  }
+  return value;
+};
+
+const parseBoolean = (value: unknown, label: string): boolean => {
+  if (typeof value !== "boolean") {
+    throw new Error(`${label} must be a boolean.`);
+  }
+  return value;
+};
+
+const parsePoint = (value: unknown, label: string): Point => {
+  const [x, y] = parseNamedNumberPair(value, label, "x", "y");
+  return { x, y };
+};
+
+const parseShapes = (value: unknown): RoiShape[] => {
+  if (!Array.isArray(value)) {
+    throw new Error("static_region_shapes must be an array.");
+  }
+  return value.map((item, index) => {
+    const label = `static_region_shapes[${index}]`;
+    const shape = parseObject(item, label);
+    const id = parseString(shape.id, `${label}.id`);
+    const name = parseString(shape.name, `${label}.name`);
+    if (shape.operation !== "include" && shape.operation !== "exclude") {
+      throw new Error(`${label}.operation must be include or exclude.`);
+    }
+    if (shape.type === "polygon") {
+      if (!Array.isArray(shape.points) || shape.points.length < 3) {
+        throw new Error(`${label}.points must contain at least three points.`);
+      }
+      return {
+        id,
+        name,
+        operation: shape.operation,
+        type: "polygon",
+        points: shape.points.map((point, pointIndex) =>
+          parsePoint(point, `${label}.points[${pointIndex}]`),
+        ),
+      };
+    }
+    if (shape.type === "ellipse") {
+      return {
+        id,
+        name,
+        operation: shape.operation,
+        type: "ellipse",
+        cx: parseNumber(shape.cx, `${label}.cx`),
+        cy: parseNumber(shape.cy, `${label}.cy`),
+        rx: parseNumber(shape.rx, `${label}.rx`),
+        ry: parseNumber(shape.ry, `${label}.ry`),
+      };
+    }
+    throw new Error(`${label}.type must be polygon or ellipse.`);
+  });
+};
+
+const isSafeZipPath = (path: string) =>
+  !path.startsWith("/") &&
+  !path.includes("\\") &&
+  path.split("/").every((part) => part && part !== "." && part !== "..");
+
+const parseStudioProject = (value: unknown): StudioProject => {
+  const data = parseObject(value, "studio/project.json");
+  const profilePath = parseString(data.profile_path, "profile_path");
+  if (!isSafeZipPath(profilePath) || !profilePath.startsWith("profiles/")) {
+    throw new Error("profile_path must point to a safe path under profiles/.");
+  }
+  const [sourceWidth, sourceHeight] = parseNamedNumberPair(
+    data.source_size,
+    "source_size",
+    "width",
+    "height",
+  );
+  if (
+    !Number.isInteger(sourceWidth) ||
+    !Number.isInteger(sourceHeight) ||
+    sourceWidth <= 0 ||
+    sourceHeight <= 0
+  ) {
+    throw new Error("source_size dimensions must be positive whole numbers.");
+  }
+  if (!Array.isArray(data.reference_images) || data.reference_images.length === 0) {
+    throw new Error("reference_images must contain at least one image.");
+  }
+  const references = data.reference_images.map((item, index) => {
+    const label = `reference_images[${index}]`;
+    const reference = parseObject(item, label);
+    const path = parseString(reference.path, `${label}.path`);
+    if (!isSafeZipPath(path) || !path.startsWith("studio/reference_images/")) {
+      throw new Error(`${label}.path must be a safe reference image path.`);
+    }
+    return {
+      id: parseString(reference.id, `${label}.id`),
+      name: parseString(reference.name, `${label}.name`),
+      path,
+      mediaType:
+        reference.media_type === undefined
+          ? "application/octet-stream"
+          : parseString(reference.media_type, `${label}.media_type`),
+      width: parsePositiveInteger(reference.width, `${label}.width`),
+      height: parsePositiveInteger(reference.height, `${label}.height`),
+      bytes: parsePositiveInteger(reference.bytes, `${label}.bytes`),
+    };
+  });
+  const referenceIds = new Set(references.map((reference) => reference.id));
+  if (referenceIds.size !== references.length) {
+    throw new Error("reference image ids must be unique.");
+  }
+  const activeReferenceId =
+    data.active_reference_id === null
+      ? null
+      : parseString(data.active_reference_id, "active_reference_id");
+  if (activeReferenceId && !referenceIds.has(activeReferenceId)) {
+    throw new Error("active_reference_id does not match a reference image.");
+  }
+  if (typeof data.step !== "string" || !STEPS.some((item) => item.id === data.step)) {
+    throw new Error("step is not a recognized Studio step.");
+  }
+  const customized = parseObject(data.customized, "customized");
+  return {
+    profilePath,
+    sourceSize: { width: sourceWidth, height: sourceHeight },
+    references,
+    activeReferenceId,
+    shapes: parseShapes(data.static_region_shapes),
+    dynamicCenter: parsePoint(
+      data.dynamic_region_preview_center,
+      "dynamic_region_preview_center",
+    ),
+    step: data.step as Step,
+    customized: {
+      strip: parseBoolean(customized.strip, "customized.strip"),
+      tiling: parseBoolean(customized.tiling, "customized.tiling"),
+      dynamic: parseBoolean(customized.dynamic, "customized.dynamic"),
+      modelInput: parseBoolean(customized.model_input, "customized.model_input"),
+      artifact: parseBoolean(customized.artifact, "customized.artifact"),
+    },
+  };
+};
+
+const referenceFilename = (name: string, usedNames: Set<string>) => {
+  const rawBasename =
+    name.split(/[\\/]/).at(-1)?.replaceAll("\0", "").trim() || "reference";
+  const basename = rawBasename === "." || rawBasename === ".." ? "reference" : rawBasename;
+  const dotIndex = basename.lastIndexOf(".");
+  const stem = dotIndex > 0 ? basename.slice(0, dotIndex) : basename;
+  const extension = dotIndex > 0 ? basename.slice(dotIndex) : "";
+  let candidate = basename;
+  let suffix = 2;
+  while (usedNames.has(candidate.toLocaleLowerCase())) {
+    candidate = `${stem}_${suffix}${extension}`;
+    suffix += 1;
+  }
+  usedNames.add(candidate.toLocaleLowerCase());
+  return candidate;
+};
+
+const loadReferenceImage = (
+  blob: Blob,
+  reference: ProjectReference,
+): Promise<SampleImage> =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      if (
+        image.naturalWidth !== reference.width ||
+        image.naturalHeight !== reference.height
+      ) {
+        URL.revokeObjectURL(url);
+        reject(new Error(`${reference.name} does not match its saved dimensions.`));
+        return;
+      }
+      resolve({
+        id: reference.id,
+        name: reference.name,
+        url,
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        bytes: blob.size,
+      });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`Could not read reference image ${reference.name}.`));
+    };
+    image.src = url;
+  });
 
 const polarPoint = (cx: number, cy: number, radius: number, angle: number) => ({
   x: cx + radius * Math.cos(angle),
@@ -1648,14 +1877,7 @@ export default function Home() {
     event.target.value = "";
   };
 
-  const handleImportProfile = async (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setImportMessage(null);
-    try {
-      const parsed = JSON.parse(await file.text()) as unknown;
+  const applyImportedProfile = (parsed: unknown) => {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("Profile JSON must contain an object at the top level.");
       }
@@ -1836,18 +2058,116 @@ export default function Home() {
       }
       setStaticMaskNeedsRedraw(validRegion?.type === "mask");
       setStep("review");
+  };
+
+  const handleImportProfile = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportMessage(null);
+    let importedSamples: SampleImage[] = [];
+    try {
+      if (!file.name.toLocaleLowerCase().endsWith(".zip")) {
+        applyImportedProfile(JSON.parse(await file.text()) as unknown);
+        return;
+      }
+
+      const zip = await JSZip.loadAsync(file);
+      const projectEntry = zip.file("studio/project.json");
+      if (!projectEntry) {
+        throw new Error("The ZIP does not contain studio/project.json.");
+      }
+      const project = parseStudioProject(
+        JSON.parse(await projectEntry.async("string")) as unknown,
+      );
+      const profileEntry = zip.file(project.profilePath);
+      if (!profileEntry) {
+        throw new Error(`The ZIP does not contain ${project.profilePath}.`);
+      }
+      const parsedProfile = JSON.parse(await profileEntry.async("string")) as unknown;
+      const profileObject = parseObject(parsedProfile, "profile");
+      const validRegion = profileObject.valid_region;
+      if (validRegion) {
+        const validRegionObject = parseObject(validRegion, "valid_region");
+        if (validRegionObject.type === "mask") {
+          const maskPath = parseString(validRegionObject.path, "valid_region.path");
+          if (!isSafeZipPath(maskPath)) {
+            throw new Error("valid_region.path is not safe.");
+          }
+          const archivedMaskPath = `dataset/valid_regions/${maskPath}`;
+          if (!zip.file(archivedMaskPath)) {
+            throw new Error(`The ZIP does not contain ${archivedMaskPath}.`);
+          }
+        }
+      }
+
+      const referencePaths = new Set<string>();
+      for (const reference of project.references) {
+        if (referencePaths.has(reference.path)) {
+          throw new Error(`Reference image path ${reference.path} is used more than once.`);
+        }
+        referencePaths.add(reference.path);
+        const entry = zip.file(reference.path);
+        if (!entry) {
+          throw new Error(`The ZIP does not contain ${reference.path}.`);
+        }
+        const bytes = await entry.async("uint8array");
+        if (bytes.byteLength !== reference.bytes) {
+          throw new Error(`${reference.name} does not match its saved file size.`);
+        }
+        const blob = new Blob([bytes], { type: reference.mediaType });
+        importedSamples.push(await loadReferenceImage(blob, reference));
+      }
+
+      const dimensionsMatch = importedSamples.every(
+        (sample) =>
+          sample.width === project.sourceSize.width &&
+          sample.height === project.sourceSize.height,
+      );
+      if (!dimensionsMatch) {
+        throw new Error("Reference images do not match the saved source size.");
+      }
+
+      applyImportedProfile(parsedProfile);
+      samplesRef.current.forEach((sample) => URL.revokeObjectURL(sample.url));
+      samplesRef.current = importedSamples;
+      setSamples(importedSamples);
+      setActiveSampleId(project.activeReferenceId ?? importedSamples[0]?.id ?? null);
+      setFallbackSourceSize(project.sourceSize);
+      setShapes(project.shapes);
+      setUndoStack([]);
+      setRedoStack([]);
+      setSelectedShapeId(null);
+      setDynamicCenter(project.dynamicCenter);
+      stripCustomizedRef.current = project.customized.strip;
+      tilingCustomizedRef.current = project.customized.tiling;
+      dynamicCustomizedRef.current = project.customized.dynamic;
+      modelInputCustomizedRef.current = project.customized.modelInput;
+      artifactCustomizedRef.current = project.customized.artifact;
+      setStaticMaskNeedsRedraw(
+        Boolean(
+          validRegion &&
+            parseObject(validRegion, "valid_region").type === "mask" &&
+            project.shapes.length === 0,
+        ),
+      );
+      setStep(project.step);
+      importedSamples = [];
     } catch (error) {
+      importedSamples.forEach((sample) => URL.revokeObjectURL(sample.url));
       setImportMessage({
         message:
           error instanceof SyntaxError
-            ? "That file contains malformed JSON."
+            ? "The selected file contains malformed JSON."
             : error instanceof Error
-              ? `Could not import profile: ${error.message}`
-              : "That file is not a valid profile JSON.",
+              ? `Could not import profile or project: ${error.message}`
+              : "That file is not a valid profile or Studio project.",
         tone: "error",
       });
+    } finally {
+      event.target.value = "";
     }
-    event.target.value = "";
   };
 
   const tilingTiles = useMemo(() => {
@@ -2312,14 +2632,69 @@ export default function Home() {
       const zip = new JSZip();
       const resolvedProfileName = slugify(profileName);
       const resolvedMaskName = maskName.trim() || DEFAULT_MASK_NAME;
+      const profilePath = `profiles/${resolvedProfileName}.json`;
       zip.file(
-        `profiles/${resolvedProfileName}.json`,
+        profilePath,
         `${JSON.stringify(profile, null, 2)}\n`,
       );
 
       if (regionMode === "static") {
         zip.file(`dataset/valid_regions/${resolvedMaskName}`, await drawMask());
       }
+
+      const usedReferenceNames = new Set<string>();
+      const projectReferences: Array<{
+        id: string;
+        name: string;
+        path: string;
+        media_type: string;
+        width: number;
+        height: number;
+        bytes: number;
+      }> = [];
+      for (const sample of samples) {
+        const response = await fetch(sample.url);
+        if (!response.ok) {
+          throw new Error(`Could not read reference image ${sample.name}.`);
+        }
+        const blob = await response.blob();
+        const filename = referenceFilename(sample.name, usedReferenceNames);
+        const path = `studio/reference_images/${filename}`;
+        zip.file(path, blob);
+        projectReferences.push({
+          id: sample.id,
+          name: sample.name,
+          path,
+          media_type: blob.type || "application/octet-stream",
+          width: sample.width,
+          height: sample.height,
+          bytes: blob.size,
+        });
+      }
+
+      const studioProject = {
+        profile_path: profilePath,
+        source_size: {
+          width: sourceWidth,
+          height: sourceHeight,
+        },
+        reference_images: projectReferences,
+        active_reference_id: activeSample?.id ?? null,
+        static_region_shapes: shapes,
+        dynamic_region_preview_center: dynamicCenter,
+        step,
+        customized: {
+          strip: stripCustomizedRef.current,
+          tiling: tilingCustomizedRef.current,
+          dynamic: dynamicCustomizedRef.current,
+          model_input: modelInputCustomizedRef.current,
+          artifact: artifactCustomizedRef.current,
+        },
+      };
+      zip.file(
+        "studio/project.json",
+        `${JSON.stringify(studioProject, null, 2)}\n`,
+      );
 
       const bundle = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(bundle);
@@ -2360,7 +2735,7 @@ export default function Home() {
             <input
               ref={importInputRef}
               type="file"
-              accept=".json,application/json"
+              accept=".json,.zip,application/json,application/zip"
               hidden
               onChange={handleImportProfile}
             />
@@ -2370,7 +2745,7 @@ export default function Home() {
               onClick={() => importInputRef.current?.click()}
             >
               <FileJson size={16} />
-              Import profile
+              Import profile or project
             </button>
           </div>
           {importMessage && (

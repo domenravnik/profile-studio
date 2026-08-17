@@ -11,9 +11,9 @@ settings, then download the files needed by the detector.
 - Draw include/exclude polygons and ellipses for a static valid-region mask.
 - Configure dynamic ellipse localization.
 - Preview native post-geometry tiling and exact static-ROI coverage with the 30% inclusion threshold.
-- Import an existing profile JSON.
-- Validate settings and download a ZIP containing the detector profile and an
-  optional static mask.
+- Import an existing profile JSON or a complete Studio project ZIP.
+- Validate settings and download a ZIP containing the detector profile, an
+  optional static mask, editable Studio settings, and reference images.
 - Keep drafts in browser storage; uploaded images remain local to the browser.
 
 Profile JSON uses named geometry objects: sizes contain `width` and `height`, positions contain `x` and `y`,
@@ -39,12 +39,20 @@ npm run start
 
 ## Exported files
 
-Every export contains the detector profile:
+Every export contains the detector profile and the Studio project data:
 
 ```text
 <profile-name>.zip
-└── profiles/<profile-name>.json
+├── profiles/<profile-name>.json
+└── studio/
+    ├── project.json
+    └── reference_images/
+        └── <original-image-name>
 ```
+
+Reference images keep their imported filenames. When filenames collide, the
+later files receive numeric suffixes such as `_2`. Importing the ZIP restores
+the images, active image, editable valid-region shapes, and Studio state.
 
 Profiles that use a static valid region also contain its mask:
 
