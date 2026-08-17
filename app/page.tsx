@@ -2142,7 +2142,9 @@ export default function Home() {
         if (bytes.byteLength !== reference.bytes) {
           throw new Error(`${reference.name} does not match its saved file size.`);
         }
-        const blob = new Blob([bytes], { type: reference.mediaType });
+        const blobBytes = new Uint8Array(bytes.byteLength);
+        blobBytes.set(bytes);
+        const blob = new Blob([blobBytes.buffer], { type: reference.mediaType });
         importedSamples.push(await loadReferenceImage(blob, reference));
       }
 
