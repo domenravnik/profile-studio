@@ -2269,7 +2269,7 @@ export default function Home() {
           y,
           width: tileWidth,
           height: tileHeight,
-          included: valid > 0,
+          included: coverage >= 0.3,
           coverage,
         });
       }
@@ -2400,7 +2400,7 @@ export default function Home() {
             ? "Width stride cannot exceed tile width because it would leave uninspected gaps."
             : null;
   const coverageIssue = tilingEnabled && !tileIssue && !strideIssue && !tilingTiles.some((tile) => tile.included)
-    ? "No tile intersects the valid region."
+    ? "No tile reaches the required 30% valid-region coverage."
     : null;
   const artifactIssue = !artifactEnabled
     ? null
@@ -4267,7 +4267,7 @@ export default function Home() {
                       <i className="included" /> Included
                     </span>
                     <span>
-                      <i className="skipped" /> Outside ROI
+                      <i className="skipped" /> Below 30% ROI
                     </span>
                   </div>
                   {coverageIssue && <FieldMessage message={coverageIssue} />}
