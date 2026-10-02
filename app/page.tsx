@@ -1166,7 +1166,7 @@ export default function Home() {
   }, [samples]);
 
   useEffect(() => {
-    if (tilingEnabled || !processedMask) return;
+    if (!processedMask) return;
     const canvas = processedMaskPreviewRef.current;
     if (!canvas) return;
 
@@ -1192,7 +1192,7 @@ export default function Home() {
         maskImage.data[rgbaIndex] = 76;
         maskImage.data[rgbaIndex + 1] = 139;
         maskImage.data[rgbaIndex + 2] = 105;
-        maskImage.data[rgbaIndex + 3] = 41;
+        maskImage.data[rgbaIndex + 3] = tilingEnabled ? 0 : 41;
       }
       maskContext.putImageData(maskImage, 0, 0);
       context.imageSmoothingEnabled = true;
@@ -1234,7 +1234,7 @@ export default function Home() {
           }
         }
       }
-      context.strokeStyle = "rgba(76, 139, 105, 0.9)";
+      context.strokeStyle = tilingEnabled ? "rgba(76, 139, 105, 0.7)" : "rgba(76, 139, 105, 0.9)";
       context.lineWidth = 1.5;
       context.lineCap = "round";
       context.lineJoin = "round";
@@ -2399,9 +2399,48 @@ export default function Home() {
           : strideWidth > tileWidth
             ? "Width stride cannot exceed tile width because it would leave uninspected gaps."
             : null;
-  const coverageIssue = tilingEnabled && !tileIssue && !strideIssue && !tilingTiles.some((tile) => tile.included)
-    ? "No tile reaches the required 30% valid-region coverage."
-    : null;
+  const coverageIssue = useMemo(() => {
+    if (!tilingEnabled || tileIssue || strideIssue) return null;
+    const includedTiles = tilingTiles.filter((tile) => tile.included);
+    if (includedTiles.length === 0) {
+      return "No tiles cover the ROI. Try a smaller tile size.";
+    }
+    if (
+      regionMode !== "static" ||
+      !processedMask ||
+      processedMask.width !== processedWidth ||
+      processedMask.height !== processedHeight
+    ) return null;
+
+    // Rectangle differences count the tile union without double-counting overlaps.
+    const rowWidth = processedWidth + 1;
+    const coverage = new Int32Array(rowWidth * (processedHeight + 1));
+    for (const tile of includedTiles) {
+      const right = Math.min(tile.x + tile.width, processedWidth);
+      const bottom = Math.min(tile.y + tile.height, processedHeight);
+      coverage[tile.y * rowWidth + tile.x] += 1;
+      coverage[tile.y * rowWidth + right] -= 1;
+      coverage[bottom * rowWidth + tile.x] -= 1;
+      coverage[bottom * rowWidth + right] += 1;
+    }
+    let uncoveredPixels = 0;
+    for (let y = 0; y < processedHeight; y += 1) {
+      let rowSum = 0;
+      for (let x = 0; x < processedWidth; x += 1) {
+        const index = y * rowWidth + x;
+        rowSum += coverage[index];
+        coverage[index] = rowSum + (y > 0 ? coverage[index - rowWidth] : 0);
+        if (processedMask.pixels[y * processedWidth + x]) {
+          if (coverage[index] === 0) uncoveredPixels += 1;
+        }
+      }
+    }
+    if (uncoveredPixels === 0) return null;
+    return "Part of the ROI won’t be inspected. Try a smaller tile size or stride.";
+  }, [
+    tilingEnabled, tileIssue, strideIssue, tilingTiles,
+    regionMode, processedMask, processedWidth, processedHeight,
+  ]);
   const artifactIssue = !artifactEnabled
     ? null
     : ![artifactWidth, artifactHeight].every(Number.isInteger)
@@ -2893,8 +2932,7 @@ export default function Home() {
                 }}
               >
               {(step === "model" || step === "review") &&
-                regionMode === "static" &&
-                !tilingEnabled && (
+                regionMode === "static" && (
                   <defs>
                     <g id="valid-region-includes">
                       {shapes
@@ -3289,10 +3327,81 @@ export default function Home() {
                   </g>
                 )}
 
+              {(step === "model" || step === "review") && tilingEnabled && (
+                <g className="tiling-overlay">
+                  {tilingTiles.map((tile) => {
+                    const tileClassName = `tile ${tile.included ? "included" : "skipped"} ${hoveredTileId === tile.id ? "highlighted" : ""}`;
+                    const tileEvents = {
+                      onPointerEnter: () => setHoveredTileId(tile.id),
+                      onPointerLeave: () => setHoveredTileId(null),
+                    };
+
+                    if (geometryMode === "full") {
+                      return (
+                        <rect
+                          key={tile.id}
+                          x={tile.x}
+                          y={tile.y}
+                          width={tile.width}
+                          height={tile.height}
+                          className={tileClassName}
+                          {...tileEvents}
+                        />
+                      );
+                    }
+
+                    if (geometryMode === "crop") {
+                      return (
+                        <rect
+                          key={tile.id}
+                          x={cropGeometry.x + tile.x}
+                          y={cropGeometry.y + tile.y}
+                          width={Math.min(tile.width, processedWidth - tile.x)}
+                          height={Math.min(tile.height, processedHeight - tile.y)}
+                          className={tileClassName}
+                          {...tileEvents}
+                        />
+                      );
+                    }
+
+                    const radialSpan =
+                      annulusGeometry.outerRadius - annulusGeometry.innerRadius;
+                    const innerRadius =
+                      annulusGeometry.innerRadius +
+                      (tile.y / processedHeight) * radialSpan;
+                    const outerRadius =
+                      annulusGeometry.innerRadius +
+                      (Math.min(tile.y + tile.height, processedHeight) /
+                        processedHeight) *
+                        radialSpan;
+                    const startAngle = (tile.x / processedWidth) * Math.PI * 2;
+                    const endAngle =
+                      (Math.min(tile.x + tile.width, processedWidth) /
+                        processedWidth) *
+                      Math.PI * 2;
+
+                    return (
+                      <path
+                        key={tile.id}
+                        d={annularSectorPath(
+                          annulusGeometry.cx,
+                          annulusGeometry.cy,
+                          innerRadius,
+                          outerRadius,
+                          startAngle,
+                          endAngle,
+                        )}
+                        className={tileClassName}
+                        {...tileEvents}
+                      />
+                    );
+                  })}
+                </g>
+              )}
+
               {(step === "model" || step === "review") &&
-                regionMode === "static" &&
-                !tilingEnabled && (
-                  <g className="final-valid-region">
+                regionMode === "static" && (
+                  <g className={`final-valid-region ${tilingEnabled ? "with-tiles" : ""}`}>
                     <g mask="url(#final-valid-region-mask)">
                       <use
                         href="#valid-region-geometry"
@@ -3377,77 +3486,6 @@ export default function Home() {
                   </g>
                 )}
 
-              {(step === "model" || step === "review") && tilingEnabled && (
-                <g className="tiling-overlay">
-                  {tilingTiles.map((tile) => {
-                    const tileClassName = `tile ${tile.included ? "included" : "skipped"} ${hoveredTileId === tile.id ? "highlighted" : ""}`;
-                    const tileEvents = {
-                      onPointerEnter: () => setHoveredTileId(tile.id),
-                      onPointerLeave: () => setHoveredTileId(null),
-                    };
-
-                    if (geometryMode === "full") {
-                      return (
-                        <rect
-                          key={tile.id}
-                          x={tile.x}
-                          y={tile.y}
-                          width={tile.width}
-                          height={tile.height}
-                          className={tileClassName}
-                          {...tileEvents}
-                        />
-                      );
-                    }
-
-                    if (geometryMode === "crop") {
-                      return (
-                        <rect
-                          key={tile.id}
-                          x={cropGeometry.x + tile.x}
-                          y={cropGeometry.y + tile.y}
-                          width={Math.min(tile.width, processedWidth - tile.x)}
-                          height={Math.min(tile.height, processedHeight - tile.y)}
-                          className={tileClassName}
-                          {...tileEvents}
-                        />
-                      );
-                    }
-
-                    const radialSpan =
-                      annulusGeometry.outerRadius - annulusGeometry.innerRadius;
-                    const innerRadius =
-                      annulusGeometry.innerRadius +
-                      (tile.y / processedHeight) * radialSpan;
-                    const outerRadius =
-                      annulusGeometry.innerRadius +
-                      (Math.min(tile.y + tile.height, processedHeight) /
-                        processedHeight) *
-                        radialSpan;
-                    const startAngle = (tile.x / processedWidth) * Math.PI * 2;
-                    const endAngle =
-                      (Math.min(tile.x + tile.width, processedWidth) /
-                        processedWidth) *
-                      Math.PI * 2;
-
-                    return (
-                      <path
-                        key={tile.id}
-                        d={annularSectorPath(
-                          annulusGeometry.cx,
-                          annulusGeometry.cy,
-                          innerRadius,
-                          outerRadius,
-                          startAngle,
-                          endAngle,
-                        )}
-                        className={tileClassName}
-                        {...tileEvents}
-                      />
-                    );
-                  })}
-                </g>
-              )}
 
               {step === "region" && regionMode === "dynamic" && (
                 <g className="dynamic-ellipse">
@@ -3584,7 +3622,7 @@ export default function Home() {
                     className="processed-preview"
                     aria-label={`Unwrapped annulus preview of ${activeSample.name}`}
                   />
-                  {!tilingEnabled && regionMode === "static" && processedMask && (
+                  {regionMode === "static" && processedMask && (
                     <canvas
                       ref={processedMaskPreviewRef}
                       className="processed-mask-preview"

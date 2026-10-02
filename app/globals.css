@@ -592,6 +592,14 @@ button:disabled {
   vector-effect: non-scaling-stroke;
 }
 
+.final-valid-region.with-tiles .final-valid-region-fill {
+  fill: none;
+}
+
+.final-valid-region.with-tiles .final-valid-region-boundary {
+  stroke: rgba(76, 139, 105, 0.7);
+}
+
 .tiling-overlay .tile {
   pointer-events: auto;
   transition:
@@ -665,6 +673,7 @@ button:disabled {
 
 .annulus-strip-preview > .processed-mask-preview {
   pointer-events: none;
+  z-index: 1;
 }
 
 .annulus-strip-preview > svg {
