@@ -65,6 +65,7 @@ type EllipseShape = {
   cy: number;
   rx: number;
   ry: number;
+  rotation?: number;
 };
 type RoiShape = PolygonShape | EllipseShape;
 
@@ -202,6 +203,12 @@ type DragState =
       pointIndex: number;
       start: Point;
       original: PolygonShape;
+    }
+  | {
+      kind: "ellipse-rotation";
+      shapeId: string;
+      start: Point;
+      original: EllipseShape;
     }
   | {
       kind: "ellipse-radius";
@@ -431,6 +438,7 @@ const parseShapes = (value: unknown): RoiShape[] => {
         cy: parseNumber(shape.cy, `${label}.cy`),
         rx: parseNumber(shape.rx, `${label}.rx`),
         ry: parseNumber(shape.ry, `${label}.ry`),
+        rotation: shape.rotation === undefined ? 0 : parseNumber(shape.rotation, `${label}.rotation`),
       };
     }
     throw new Error(`${label}.type must be polygon or ellipse.`);
@@ -643,7 +651,7 @@ const drawShapePath = (
       shape.cy,
       shape.rx,
       shape.ry,
-      0,
+      ((shape.rotation ?? 0) * Math.PI) / 180,
       0,
       Math.PI * 2,
     );
@@ -980,7 +988,8 @@ export default function Home() {
   const isShapeDragging =
     dragState?.kind === "shape" ||
     dragState?.kind === "polygon-point" ||
-    dragState?.kind === "ellipse-radius";
+    dragState?.kind === "ellipse-radius" ||
+    dragState?.kind === "ellipse-rotation";
   const previewWidth = sourceWidth;
   const previewHeight = sourceHeight;
 
@@ -1670,19 +1679,31 @@ export default function Home() {
       return;
     }
 
+    if (dragState.kind === "ellipse-rotation") {
+      const original = dragState.original;
+      const startAngle = Math.atan2(dragState.start.y - original.cy, dragState.start.x - original.cx);
+      const angle = Math.atan2(point.y - original.cy, point.x - original.cx);
+      const rotation = (((original.rotation ?? 0) + (angle - startAngle) * 180 / Math.PI) % 360 + 360) % 360;
+      setShapes((current) => current.map((shape) => shape.id === dragState.shapeId ? { ...original, rotation } : shape));
+      return;
+    }
+
     if (dragState.kind === "ellipse-radius") {
       setShapes((current) =>
         current.map((shape) => {
           if (shape.id !== dragState.shapeId || shape.type !== "ellipse")
             return shape;
+          const angle = ((dragState.original.rotation ?? 0) * Math.PI) / 180;
+          const offsetX = point.x - dragState.original.cx;
+          const offsetY = point.y - dragState.original.cy;
           return dragState.axis === "horizontal"
             ? {
                 ...dragState.original,
-                rx: Math.abs(point.x - dragState.original.cx),
+                rx: Math.abs(offsetX * Math.cos(angle) + offsetY * Math.sin(angle)),
               }
             : {
                 ...dragState.original,
-                ry: Math.abs(point.y - dragState.original.cy),
+                ry: Math.abs(-offsetX * Math.sin(angle) + offsetY * Math.cos(angle)),
               };
         }),
       );
@@ -1727,7 +1748,8 @@ export default function Home() {
     if (
       dragState?.kind === "shape" ||
       dragState?.kind === "polygon-point" ||
-      dragState?.kind === "ellipse-radius"
+      dragState?.kind === "ellipse-radius" ||
+      dragState?.kind === "ellipse-rotation"
     ) {
       setUndoStack((history) => [
         ...history.slice(-39),
@@ -3041,6 +3063,7 @@ export default function Home() {
                               cy={shape.cy}
                               rx={shape.rx}
                               ry={shape.ry}
+                            transform={`rotate(${shape.rotation ?? 0} ${shape.cx} ${shape.cy})`}
                             />
                           ),
                         )}
@@ -3063,6 +3086,7 @@ export default function Home() {
                               cy={shape.cy}
                               rx={shape.rx}
                               ry={shape.ry}
+                            transform={`rotate(${shape.rotation ?? 0} ${shape.cx} ${shape.cy})`}
                             />
                           ),
                         )}
@@ -3296,6 +3320,7 @@ export default function Home() {
                             cy={shape.cy}
                             rx={shape.rx}
                             ry={shape.ry}
+                            transform={`rotate(${shape.rotation ?? 0} ${shape.cx} ${shape.cy})`}
                             className={className}
                             onPointerDown={(event) =>
                               startShapeDrag(event, shape)
@@ -3320,7 +3345,7 @@ export default function Home() {
                       ))}
 
                     {selectedShape?.type === "ellipse" && (
-                      <>
+                      <g transform={`rotate(${selectedShape.rotation ?? 0} ${selectedShape.cx} ${selectedShape.cy})`}>
                         <circle
                           cx={selectedShape.cx + selectedShape.rx}
                           cy={selectedShape.cy}
@@ -3347,7 +3372,33 @@ export default function Home() {
                             )
                           }
                         />
-                      </>
+                        <line
+                          x1={selectedShape.cx}
+                          y1={selectedShape.cy - selectedShape.ry}
+                          x2={selectedShape.cx}
+                          y2={selectedShape.cy - selectedShape.ry - Math.max(sourceWidth, sourceHeight) * 0.04 / imageZoom}
+                          className="ellipse-rotation-line"
+                          stroke={selectedShape.operation === "exclude" ? "var(--exclude)" : "var(--include)"}
+                          strokeWidth={3}
+                          vectorEffect="non-scaling-stroke"
+                          pointerEvents="none"
+                        />
+                        <circle
+                          cx={selectedShape.cx}
+                          cy={selectedShape.cy - selectedShape.ry - Math.max(sourceWidth, sourceHeight) * 0.04 / imageZoom}
+                          r={Math.max(sourceWidth, sourceHeight) * 0.007 / imageZoom}
+                          className={`roi-handle rotation-handle ${selectedShape.operation}`}
+                          aria-label="Rotate ellipse"
+                          onPointerDown={(event) => {
+                            if (tool !== "select" || step !== "region") return;
+                            event.stopPropagation();
+                            const bounds = svgRef.current!.getBoundingClientRect();
+                            const start = { x: (event.clientX - bounds.left) / bounds.width * sourceWidth, y: (event.clientY - bounds.top) / bounds.height * sourceHeight };
+                            svgRef.current?.setPointerCapture(event.pointerId);
+                            setDragState({ kind: "ellipse-rotation", shapeId: selectedShape.id, start, original: selectedShape });
+                          }}
+                        />
+                      </g>
                     )}
 
                     {ellipseStart && ellipseCurrent && (
@@ -3517,6 +3568,7 @@ export default function Home() {
                                 cy={shape.cy}
                                 rx={shape.rx}
                                 ry={shape.ry}
+                            transform={`rotate(${shape.rotation ?? 0} ${shape.cx} ${shape.cy})`}
                                 className="final-valid-region-boundary"
                               />
                             ),
@@ -3541,6 +3593,7 @@ export default function Home() {
                                 cy={shape.cy}
                                 rx={shape.rx}
                                 ry={shape.ry}
+                            transform={`rotate(${shape.rotation ?? 0} ${shape.cx} ${shape.cy})`}
                                 className="final-valid-region-boundary"
                               />
                             ),
@@ -3617,13 +3670,13 @@ export default function Home() {
             </div>
             {activeSample && (
               <div className="image-zoom-controls" role="group" aria-label="Image zoom">
-                <button type="button" aria-label="Zoom out" title="Zoom out (Alt/Option + scroll)" disabled={imageZoom <= 1} onClick={() => changeImageZoom(imageZoom / 1.25)}>
+                <button type="button" aria-label="Zoom out" disabled={imageZoom <= 1} onClick={() => changeImageZoom(imageZoom / 1.25)}>
                   <ZoomOut size={18} />
                 </button>
-                <button type="button" aria-label="Reset zoom to 1×" title="Reset zoom to 1×" disabled={imageZoom === 1} onClick={() => changeImageZoom(1)}>
+                <button type="button" aria-label="Reset zoom to 1×" disabled={imageZoom === 1} onClick={() => changeImageZoom(1)}>
                   <span>1×</span>
                 </button>
-                <button type="button" aria-label="Zoom in" title="Zoom in (Alt/Option + scroll)" disabled={imageZoom >= 5} onClick={() => changeImageZoom(imageZoom * 1.25)}>
+                <button type="button" aria-label="Zoom in" disabled={imageZoom >= 5} onClick={() => changeImageZoom(imageZoom * 1.25)}>
                   <ZoomIn size={18} />
                 </button>
               </div>

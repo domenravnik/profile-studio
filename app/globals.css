@@ -566,6 +566,10 @@ button:disabled {
   pointer-events: auto;
 }
 
+.roi-handle.rotation-handle {
+  cursor: url("/rotate-cursor.svg") 12 12, crosshair;
+}
+
 .roi-handle.horizontal,
 .dynamic-handle {
   cursor: ew-resize;
