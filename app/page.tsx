@@ -28,11 +28,13 @@ import {
   ZoomOut,
 } from "lucide-react";
 import JSZip from "jszip";
+import { flushSync } from "react-dom";
 import {
   ChangeEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -903,19 +905,21 @@ export default function Home() {
   const imagePanRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const suppressPanClickRef = useRef(false);
   const [imagePanning, setImagePanning] = useState(false);
-  const changeImageZoom = (next: number) => {
+  const changeImageZoom = useCallback((next: number, anchor?: Point) => {
     const zoom = clamp(next, 1, 5);
+    if (zoom === imageZoom) return;
     const viewport = imageViewportRef.current;
+    const x = anchor?.x ?? (viewport?.clientWidth ?? 0) / 2;
+    const y = anchor?.y ?? (viewport?.clientHeight ?? 0) / 2;
+    const imageX = ((viewport?.scrollLeft ?? 0) + x) / imageZoom;
+    const imageY = ((viewport?.scrollTop ?? 0) + y) / imageZoom;
+    // Apply the new dimensions before scrolling to preserve the anchor point.
+    flushSync(() => setImageZoom(zoom));
     if (viewport) {
-      const centerX = (viewport.scrollLeft + viewport.clientWidth / 2) / imageZoom;
-      const centerY = (viewport.scrollTop + viewport.clientHeight / 2) / imageZoom;
-      requestAnimationFrame(() => {
-        viewport.scrollLeft = centerX * zoom - viewport.clientWidth / 2;
-        viewport.scrollTop = centerY * zoom - viewport.clientHeight / 2;
-      });
+      viewport.scrollLeft = imageX * zoom - x;
+      viewport.scrollTop = imageY * zoom - y;
     }
-    setImageZoom(zoom);
-  };
+  }, [imageZoom]);
   const maskPreviewRef = useRef<HTMLCanvasElement>(null);
   const processedPreviewRef = useRef<HTMLCanvasElement>(null);
   const processedMaskPreviewRef = useRef<HTMLCanvasElement>(null);
@@ -930,6 +934,26 @@ export default function Home() {
 
   const activeSample =
     samples.find((sample) => sample.id === activeSampleId) ?? samples[0] ?? null;
+  useEffect(() => {
+    const viewport = imageViewportRef.current;
+    if (!viewport || !activeSample) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      if (imagePanRef.current || event.deltaY === 0) return;
+      const bounds = viewport.getBoundingClientRect();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
+      const delta = clamp(event.deltaY * unit, -200, 200);
+      changeImageZoom(imageZoom * Math.exp(-delta * 0.002), {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+    };
+    // React wheel handlers are passive; this listener must prevent page scrolling.
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [activeSample, changeImageZoom, imageZoom]);
+
   const sourceWidth = activeSample?.width ?? fallbackSourceSize.width;
   const sourceHeight = activeSample?.height ?? fallbackSourceSize.height;
   const processedWidth = Math.max(
@@ -3593,13 +3617,13 @@ export default function Home() {
             </div>
             {activeSample && (
               <div className="image-zoom-controls" role="group" aria-label="Image zoom">
-                <button type="button" aria-label="Zoom out" title="Zoom out" disabled={imageZoom <= 1} onClick={() => changeImageZoom(imageZoom / 1.25)}>
+                <button type="button" aria-label="Zoom out" title="Zoom out (Alt/Option + scroll)" disabled={imageZoom <= 1} onClick={() => changeImageZoom(imageZoom / 1.25)}>
                   <ZoomOut size={18} />
                 </button>
                 <button type="button" aria-label="Reset zoom to 1×" title="Reset zoom to 1×" disabled={imageZoom === 1} onClick={() => changeImageZoom(1)}>
                   <span>1×</span>
                 </button>
-                <button type="button" aria-label="Zoom in" title="Zoom in" disabled={imageZoom >= 5} onClick={() => changeImageZoom(imageZoom * 1.25)}>
+                <button type="button" aria-label="Zoom in" title="Zoom in (Alt/Option + scroll)" disabled={imageZoom >= 5} onClick={() => changeImageZoom(imageZoom * 1.25)}>
                   <ZoomIn size={18} />
                 </button>
               </div>
