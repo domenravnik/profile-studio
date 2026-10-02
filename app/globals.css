@@ -439,7 +439,8 @@ button:disabled {
   cursor: default;
 }
 
-.image-stage.drawing {
+.image-stage.drawing .image-viewport:not(.panning),
+.image-stage.drawing .image-viewport:not(.panning) .interaction-layer * {
   cursor: crosshair;
 }
 

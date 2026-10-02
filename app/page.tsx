@@ -2978,6 +2978,7 @@ export default function Home() {
               <svg
                 ref={svgRef}
                 className="interaction-layer"
+                style={{ cursor: imagePanning ? "grabbing" : step === "region" && tool !== "select" ? "crosshair" : undefined }}
                 viewBox={`0 0 ${previewWidth} ${previewHeight}`}
                 preserveAspectRatio="none"
                 onPointerDown={handleCanvasPointerDown}
