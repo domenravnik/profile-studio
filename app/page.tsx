@@ -24,6 +24,8 @@ import {
   WandSparkles,
   X,
   Zap,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import JSZip from "jszip";
 import {
@@ -896,6 +898,24 @@ export default function Home() {
   const projectInputRef = useRef<HTMLInputElement>(null);
   const profileInputRef = useRef<HTMLInputElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const imageViewportRef = useRef<HTMLDivElement>(null);
+  const [imageZoom, setImageZoom] = useState(1);
+  const imagePanRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const suppressPanClickRef = useRef(false);
+  const [imagePanning, setImagePanning] = useState(false);
+  const changeImageZoom = (next: number) => {
+    const zoom = clamp(next, 1, 4);
+    const viewport = imageViewportRef.current;
+    if (viewport) {
+      const centerX = (viewport.scrollLeft + viewport.clientWidth / 2) / imageZoom;
+      const centerY = (viewport.scrollTop + viewport.clientHeight / 2) / imageZoom;
+      requestAnimationFrame(() => {
+        viewport.scrollLeft = centerX * zoom - viewport.clientWidth / 2;
+        viewport.scrollTop = centerY * zoom - viewport.clientHeight / 2;
+      });
+    }
+    setImageZoom(zoom);
+  };
   const maskPreviewRef = useRef<HTMLCanvasElement>(null);
   const processedPreviewRef = useRef<HTMLCanvasElement>(null);
   const processedMaskPreviewRef = useRef<HTMLCanvasElement>(null);
@@ -2896,6 +2916,50 @@ export default function Home() {
             className={`image-stage ${tool !== "select" && step === "region" ? "drawing" : ""}`}
             style={{ aspectRatio: `${previewWidth} / ${previewHeight}` }}
           >
+            <div
+              className={`image-viewport ${imageZoom > 1 ? "can-pan" : ""} ${imagePanning ? "panning" : ""}`}
+              ref={imageViewportRef}
+              onPointerDownCapture={(event) => {
+                if (imageZoom <= 1 || (event.button !== 0 && event.button !== 1)) return;
+                const target = event.target as Element;
+                const editing = target.closest(".roi-shape, .roi-handle, .geometry-handle, [data-annulus-control], [data-dynamic-control], .geometry-line, .crop-overlay rect");
+                if (event.button === 0 && (editing || (step === "region" && tool !== "select"))) return;
+                const viewport = event.currentTarget;
+                imagePanRef.current = { x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
+                suppressPanClickRef.current = false;
+                viewport.setPointerCapture(event.pointerId);
+                setImagePanning(true);
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onPointerMoveCapture={(event) => {
+                const pan = imagePanRef.current;
+                if (!pan) return;
+                const dx = event.clientX - pan.x;
+                const dy = event.clientY - pan.y;
+                if (Math.abs(dx) + Math.abs(dy) > 3) suppressPanClickRef.current = true;
+                event.currentTarget.scrollLeft = pan.left - dx;
+                event.currentTarget.scrollTop = pan.top - dy;
+                event.stopPropagation();
+              }}
+              onPointerUpCapture={(event) => {
+                if (!imagePanRef.current) return;
+                imagePanRef.current = null;
+                setImagePanning(false);
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                event.stopPropagation();
+              }}
+              onLostPointerCapture={() => { imagePanRef.current = null; setImagePanning(false); }}
+              onClickCapture={(event) => {
+                if (!suppressPanClickRef.current) return;
+                suppressPanClickRef.current = false;
+                event.stopPropagation();
+              }}
+            >
+              <div className="image-content" style={{
+                width: `${imageZoom * 100}%`,
+                height: `${imageZoom * 100}%`,
+              }}>
             {activeSample ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -3524,6 +3588,21 @@ export default function Home() {
               </svg>
             )}
 
+              </div>
+            </div>
+            {activeSample && (
+              <div className="image-zoom-controls" role="group" aria-label="Image zoom">
+                <button type="button" aria-label="Zoom out" title="Zoom out" disabled={imageZoom <= 1} onClick={() => changeImageZoom(imageZoom / 1.25)}>
+                  <ZoomOut size={18} />
+                </button>
+                <button type="button" aria-label="Reset zoom to 1×" title="Reset zoom to 1×" disabled={imageZoom === 1} onClick={() => changeImageZoom(1)}>
+                  <span>1×</span>
+                </button>
+                <button type="button" aria-label="Zoom in" title="Zoom in" disabled={imageZoom >= 4} onClick={() => changeImageZoom(imageZoom * 1.25)}>
+                  <ZoomIn size={18} />
+                </button>
+              </div>
+            )}
             <div className="stage-label">
               {activeSample ? (
                 <>

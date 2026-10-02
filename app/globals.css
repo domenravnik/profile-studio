@@ -390,12 +390,59 @@ button:disabled {
   user-select: none;
 }
 
+
+
+.image-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.image-content {
+  position: relative;
+}
+
+.image-viewport.can-pan {
+  cursor: grab;
+  touch-action: none;
+}
+
+.image-viewport.panning,
+.image-viewport.panning * {
+  cursor: grabbing;
+}
+
+.image-zoom-controls {
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.image-zoom-controls button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.image-zoom-controls button:hover:not(:disabled) {
+  background: var(--surface-soft);
+  color: var(--primary);
+}
+
+.image-zoom-controls button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .image-stage.drawing {
   cursor: crosshair;
 }
 
-.image-stage > img,
-.image-stage > canvas.processed-preview,
+.image-content > img,
+.image-content > canvas.processed-preview,
 .image-empty-state,
 .interaction-layer {
   position: absolute;
@@ -404,11 +451,11 @@ button:disabled {
   height: 100%;
 }
 
-.image-stage > img {
+.image-content > img {
   object-fit: contain;
 }
 
-.image-stage > canvas.processed-preview {
+.image-content > canvas.processed-preview {
   object-fit: contain;
 }
 
@@ -729,18 +776,24 @@ button:disabled {
 }
 
 .stage-samples {
+  left: 10px;
+}
+
+.stage-samples,
+.image-zoom-controls {
   position: absolute;
   z-index: 5;
   bottom: 10px;
-  left: 10px;
   padding: 4px;
+  border: 0;
   border-radius: 10px;
   background: rgba(247, 249, 247, 0.9);
   box-shadow: 0 4px 16px rgba(18, 29, 22, 0.14);
   backdrop-filter: blur(10px);
 }
 
-.sample-pill {
+.sample-pill,
+.image-zoom-controls button {
   display: inline-grid;
   width: 30px;
   height: 28px;
