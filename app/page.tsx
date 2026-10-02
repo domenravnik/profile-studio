@@ -904,7 +904,7 @@ export default function Home() {
   const suppressPanClickRef = useRef(false);
   const [imagePanning, setImagePanning] = useState(false);
   const changeImageZoom = (next: number) => {
-    const zoom = clamp(next, 1, 4);
+    const zoom = clamp(next, 1, 5);
     const viewport = imageViewportRef.current;
     if (viewport) {
       const centerX = (viewport.scrollLeft + viewport.clientWidth / 2) / imageZoom;
@@ -3598,7 +3598,7 @@ export default function Home() {
                 <button type="button" aria-label="Reset zoom to 1×" title="Reset zoom to 1×" disabled={imageZoom === 1} onClick={() => changeImageZoom(1)}>
                   <span>1×</span>
                 </button>
-                <button type="button" aria-label="Zoom in" title="Zoom in" disabled={imageZoom >= 4} onClick={() => changeImageZoom(imageZoom * 1.25)}>
+                <button type="button" aria-label="Zoom in" title="Zoom in" disabled={imageZoom >= 5} onClick={() => changeImageZoom(imageZoom * 1.25)}>
                   <ZoomIn size={18} />
                 </button>
               </div>
