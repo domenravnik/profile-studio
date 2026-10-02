@@ -3148,7 +3148,7 @@ export default function Home() {
                         key={corner}
                         cx={x}
                         cy={y}
-                        r={Math.max(sourceWidth, sourceHeight) * 0.0075}
+                        r={(Math.max(sourceWidth, sourceHeight) * 0.0075) / imageZoom}
                         className="geometry-handle"
                         data-crop-corner={corner}
                       />
@@ -3180,14 +3180,14 @@ export default function Home() {
                     <circle
                       cx={annulusGeometry.cx + annulusGeometry.outerRadius}
                       cy={annulusGeometry.cy}
-                      r={Math.max(sourceWidth, sourceHeight) * 0.0075}
+                      r={(Math.max(sourceWidth, sourceHeight) * 0.0075) / imageZoom}
                       className="geometry-handle"
                       data-annulus-control="outer-radius"
                     />
                     <circle
                       cx={annulusGeometry.cx + annulusGeometry.innerRadius}
                       cy={annulusGeometry.cy}
-                      r={Math.max(sourceWidth, sourceHeight) * 0.0075}
+                      r={(Math.max(sourceWidth, sourceHeight) * 0.0075) / imageZoom}
                       className="geometry-handle"
                       data-annulus-control="inner-radius"
                     />
@@ -3286,7 +3286,7 @@ export default function Home() {
                           key={index}
                           cx={point.x}
                           cy={point.y}
-                          r={Math.max(sourceWidth, sourceHeight) * 0.007}
+                          r={(Math.max(sourceWidth, sourceHeight) * 0.007) / imageZoom}
                           className={`roi-handle ${selectedShape.operation}`}
                           onPointerDown={(event) =>
                             startPolygonPointDrag(event, selectedShape, index)
@@ -3299,7 +3299,7 @@ export default function Home() {
                         <circle
                           cx={selectedShape.cx + selectedShape.rx}
                           cy={selectedShape.cy}
-                          r={Math.max(sourceWidth, sourceHeight) * 0.007}
+                          r={(Math.max(sourceWidth, sourceHeight) * 0.007) / imageZoom}
                           className={`roi-handle horizontal ${selectedShape.operation}`}
                           onPointerDown={(event) =>
                             startEllipseRadiusDrag(
@@ -3312,7 +3312,7 @@ export default function Home() {
                         <circle
                           cx={selectedShape.cx}
                           cy={selectedShape.cy + selectedShape.ry}
-                          r={Math.max(sourceWidth, sourceHeight) * 0.007}
+                          r={(Math.max(sourceWidth, sourceHeight) * 0.007) / imageZoom}
                           className={`roi-handle vertical ${selectedShape.operation}`}
                           onPointerDown={(event) =>
                             startEllipseRadiusDrag(
@@ -3340,7 +3340,7 @@ export default function Home() {
               <PolygonDraftLayer
                 ref={polygonDraftRef}
                 operation={operation}
-                handleRadius={Math.max(sourceWidth, sourceHeight) * 0.007}
+                handleRadius={(Math.max(sourceWidth, sourceHeight) * 0.007) / imageZoom}
                 visible={step === "region" && regionMode === "static"}
                 onActiveChange={setHasDraftPolygon}
               />
@@ -3572,14 +3572,14 @@ export default function Home() {
                   <circle
                     cx={dynamicCenter.x + dynamicMax / 2}
                     cy={dynamicCenter.y}
-                    r={Math.max(sourceWidth, sourceHeight) * 0.0075}
+                    r={(Math.max(sourceWidth, sourceHeight) * 0.0075) / imageZoom}
                     className="geometry-handle dynamic-handle"
                     data-dynamic-control="maximum"
                   />
                   <circle
                     cx={dynamicCenter.x + dynamicMin / 2}
                     cy={dynamicCenter.y}
-                    r={Math.max(sourceWidth, sourceHeight) * 0.0075}
+                    r={(Math.max(sourceWidth, sourceHeight) * 0.0075) / imageZoom}
                     className="geometry-handle dynamic-handle"
                     data-dynamic-control="minimum"
                   />
