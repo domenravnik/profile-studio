@@ -11,6 +11,7 @@ settings, then download the files needed by the detector.
 - Draw include/exclude polygons and ellipses for a static valid-region mask.
 - Configure dynamic ellipse localization.
 - Preview native post-geometry tiling and exact static-ROI coverage with the 30% inclusion threshold.
+- Choose the Standard or Small defects detector. Small defects cannot be combined with a dynamic ellipse region.
 - Import an existing profile JSON or a complete Studio project ZIP.
 - Validate settings and download a ZIP containing the detector profile, an
   optional static mask, editable Studio settings, and reference images.

@@ -133,6 +133,22 @@ type PolygonDraftHandle = {
 const MASK_PREVIEW_MAX_DIMENSION = 640;
 const DEFAULT_MASK_NAME = "valid_region.png";
 
+type Detector = "standard" | "small_defects";
+const DETECTORS: Array<{ id: Detector; label: string; hint: string }> = [
+  {
+    id: "standard",
+    label: "Standard",
+    hint: "Suits general inspection, including rotating parts, whole objects, and larger or color defects.",
+  },
+  {
+    id: "small_defects",
+    label: "Small defects",
+    hint: "Finds small, low-contrast defects on precisely aligned images, such as unwrapped annulus strips. Trains more slowly.",
+  },
+];
+const isDetector = (value: unknown): value is Detector =>
+  DETECTORS.some((detector) => detector.id === value);
+
 const PolygonDraftLayer = forwardRef<
   PolygonDraftHandle,
   {
@@ -887,6 +903,7 @@ export default function Home() {
   });
   const [inputHeight, setInputHeight] = useState(256);
   const [inputWidth, setInputWidth] = useState(256);
+  const [detector, setDetector] = useState<Detector>("standard");
   const [tilingEnabled, setTilingEnabled] = useState(false);
   const [tileHeight, setTileHeight] = useState(128);
   const [tileWidth, setTileWidth] = useState(128);
@@ -1960,6 +1977,7 @@ export default function Home() {
         "postprocess_steps",
         "tiling",
         "valid_region",
+        "detector",
         "artifacts",
       ]);
       const unsupportedField = Object.keys(data).find((key) => !supportedFields.has(key));
@@ -1968,6 +1986,12 @@ export default function Home() {
       }
       if (typeof data.name !== "string") {
         throw new Error("name must be a string.");
+      }
+      const importedDetector = data.detector ?? "standard";
+      if (!isDetector(importedDetector)) {
+        throw new Error(
+          `detector must be one of: ${DETECTORS.map((item) => item.id).join(", ")}.`,
+        );
       }
       const [inputWidthValue, inputHeightValue] = parseNamedNumberPair(
         data.model_input_size,
@@ -1979,6 +2003,7 @@ export default function Home() {
       stripCustomizedRef.current = false;
       dynamicCustomizedRef.current = false;
       setProfileName(data.name);
+      setDetector(importedDetector);
       setInputHeight(inputHeightValue);
       setInputWidth(inputWidthValue);
       setFallbackSourceSize({
@@ -2443,6 +2468,9 @@ export default function Home() {
     : inputHeight <= 0 || inputWidth <= 0
       ? "Model input dimensions must be greater than zero."
       : null;
+  const detectorIssue = detector === "small_defects" && regionMode === "dynamic"
+    ? "Small defects needs a fixed inspection area. Use a static mask or the Standard detector."
+    : null;
   const tileIssue = !tilingEnabled
     ? null
     : ![tileHeight, tileWidth].every(Number.isInteger)
@@ -2562,6 +2590,13 @@ export default function Home() {
       label: modelInputIssue ?? "Model input size is valid",
       step: "model",
     });
+    if (detector !== "standard") {
+      checks.push({
+        ok: !detectorIssue,
+        label: detectorIssue ?? "Small defects detector has a fixed inspection area",
+        step: "model",
+      });
+    }
     if (tilingEnabled) {
       checks.push({
         ok: !tileIssue,
@@ -2599,6 +2634,8 @@ export default function Home() {
     tilingEnabled,
     tilingTiles,
     modelInputIssue,
+    detector,
+    detectorIssue,
     tileIssue,
     strideIssue,
     coverageIssue,
@@ -2709,6 +2746,10 @@ export default function Home() {
       };
     }
 
+    if (detector !== "standard") {
+      output.detector = detector;
+    }
+
     if (artifactEnabled) {
       output.artifacts = {
         size: {
@@ -2736,6 +2777,7 @@ export default function Home() {
     tileWidth,
     strideHeight,
     strideWidth,
+    detector,
     artifactEnabled,
     artifactWidth,
     artifactHeight,
@@ -4322,6 +4364,7 @@ export default function Home() {
                     </div>
                     {regionIssue && <FieldMessage message={regionIssue} />}
                   </div>
+                  {detectorIssue && <FieldMessage message={detectorIssue} />}
                 </>
               )}
 
@@ -4353,6 +4396,27 @@ export default function Home() {
 
           {step === "model" && (
             <div className="settings-content">
+              <div className="field-group">
+                <label className="field-label">Detector</label>
+                <div className="segmented-control two">
+                  {DETECTORS.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className={detector === item.id ? "active" : undefined}
+                      aria-pressed={detector === item.id}
+                      onClick={() => setDetector(item.id)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                {detectorIssue && <FieldMessage message={detectorIssue} />}
+                <div className="field-hint">
+                  {DETECTORS.find((item) => item.id === detector)?.hint} Retrain after changing the detector.
+                </div>
+              </div>
+
               <div className="field-group">
                 <label className="field-label">Model input size</label>
                 <div className="field-pair">
